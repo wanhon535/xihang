@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TideSail 汐航</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/"><span>TideSail</span><small>汐航</small></a>
+      <nav class="topnav">
+        <a class="admin-only hidden" href="/admin.html">后台管理</a>
+        <span id="userName" class="user"></span>
+        <button id="logoutBtn" class="link-btn" type="button">退出</button>
+      </nav>
+    </header>
+    <main class="page">
+      <div class="ambient ambient-one"></div>
+      <div class="ambient ambient-two"></div>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">TIDESAIL WORKSPACE</p>
+          <h1>汐航团队入口</h1>
+          <p>像潮汐一样汇聚零散系统，像航标一样指引团队快速抵达产品、业务、文档和交付入口。</p>
+          <div class="search-wrap">
+            <input id="searchInput" class="search-input" placeholder="搜索站点、说明或标签" autocomplete="off" />
+          </div>
+        </div>
+        <div class="hero-panel">
+          <span>当前账号</span>
+          <strong id="accountName">-</strong>
+          <small id="accountRole">-</small>
+          <div class="stats">
+            <div><b id="groupCount">0</b><span>分组</span></div>
+            <div><b id="siteCount">0</b><span>站点</span></div>
+          </div>
+        </div>
+      </section>
+      <section id="content" class="content-state">正在加载...</section>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

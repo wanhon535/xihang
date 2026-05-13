@@ -1,0 +1,46 @@
+import { API_BASE_URL } from './config.js';
+
+export async function api(path, options = {}) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: 'include',
+    headers: {
+      'content-type': 'application/json',
+      ...(options.headers || {})
+    },
+    ...options
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    const error = new Error(payload.message || '请求失败');
+    error.status = response.status;
+    throw error;
+  }
+
+  return payload;
+}
+
+export function redirectToLogin(error) {
+  const query = error ? `?error=${encodeURIComponent(error)}` : '';
+  window.location.href = `/login.html${query}`;
+}
+
+export async function requireUser() {
+  const payload = await api('/api/auth/me');
+  if (!payload.user) {
+    redirectToLogin();
+    return null;
+  }
+  return payload.user;
+}
+
+export async function logout() {
+  await api('/api/auth/logout', { method: 'POST', body: '{}' });
+  redirectToLogin();
+}
+
+export function createSsoUrl(targetUrl) {
+  const url = new URL(`${API_BASE_URL}/api/sso/authorize`);
+  url.searchParams.set('redirect', targetUrl);
+  return url.toString();
+}

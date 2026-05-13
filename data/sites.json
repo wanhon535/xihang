@@ -1,0 +1,50 @@
+[
+  {
+    "name": "产品与业务",
+    "description": "产品定位、业务后台、需求与文档入口。",
+    "sites": [
+      {
+        "name": "产品定位文档",
+        "url": "https://example.com/product-positioning",
+        "description": "沉淀目标用户、核心价值、差异化定位。",
+        "tags": ["产品", "定位"]
+      },
+      {
+        "name": "需求池",
+        "url": "https://example.com/requirements",
+        "description": "需求收集、优先级评估和版本排期。",
+        "tags": ["需求", "协作"]
+      },
+      {
+        "name": "运营后台",
+        "url": "https://example.com/admin",
+        "description": "日常运营、用户查询和业务配置。",
+        "tags": ["后台"]
+      }
+    ]
+  },
+  {
+    "name": "研发与交付",
+    "description": "代码、发布、监控和接口文档。",
+    "sites": [
+      {
+        "name": "代码仓库",
+        "url": "https://example.com/repo",
+        "description": "团队代码仓库与合并请求。",
+        "tags": ["研发", "代码"]
+      },
+      {
+        "name": "接口文档",
+        "url": "https://example.com/api-docs",
+        "description": "服务接口、字段说明和联调信息。",
+        "tags": ["API"]
+      },
+      {
+        "name": "监控告警",
+        "url": "https://example.com/monitoring",
+        "description": "线上服务状态、日志和告警处理。",
+        "tags": ["稳定性"]
+      }
+    ]
+  }
+]

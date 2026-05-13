@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>后台管理 - TideSail 汐航</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/"><span>TideSail</span><small>汐航</small></a>
+      <nav class="topnav">
+        <a href="/">返回首页</a>
+        <span id="userName" class="user"></span>
+        <button id="logoutBtn" class="link-btn" type="button">退出</button>
+      </nav>
+    </header>
+    <main class="page">
+      <section class="admin-head">
+        <div>
+          <p class="eyebrow">ADMIN</p>
+          <h1>后台管理</h1>
+          <p>维护导航分组和站点，保存后数据写入 MySQL，团队成员刷新首页即可看到最新配置。</p>
+        </div>
+        <div class="row-actions">
+          <button id="addGroupBtn" class="plain-btn" type="button">新增分组</button>
+          <button id="saveBtn" class="primary-btn" type="button">保存配置</button>
+        </div>
+      </section>
+      <section class="admin-shell">
+        <div id="adminEditor" class="admin-editor">正在加载...</div>
+        <p id="saveStatus" class="hint">数据源：MySQL</p>
+      </section>
+    </main>
+    <script type="module" src="/src/admin.js"></script>
+  </body>
+</html>
