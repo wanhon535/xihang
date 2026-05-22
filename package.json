@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev:backend": "node --watch backend/src/server.js",
-    "dev:frontend": "vite --host 0.0.0.0",
+    "dev:frontend": "vite --host 127.0.0.1 --port 2223 --strictPort",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "start": "node backend/src/server.js",
     "check": "node --check backend/src/server.js",

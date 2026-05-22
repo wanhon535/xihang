@@ -3,35 +3,304 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>后台管理 - TideSail 汐航</title>
+    <title>管理中枢 - 汐航</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
-  <body>
-    <header class="topbar">
-      <a class="brand" href="/"><span>TideSail</span><small>汐航</small></a>
-      <nav class="topnav">
-        <a href="/">返回首页</a>
-        <span id="userName" class="user"></span>
-        <button id="logoutBtn" class="link-btn" type="button">退出</button>
-      </nav>
-    </header>
-    <main class="page">
-      <section class="admin-head">
-        <div>
-          <p class="eyebrow">ADMIN</p>
-          <h1>后台管理</h1>
-          <p>维护导航分组和站点，保存后数据写入 MySQL，团队成员刷新首页即可看到最新配置。</p>
+  <body class="console-page admin-page admin-reference-page">
+    <aside id="sidebar" class="side-rail admin-sidebar" aria-label="管理导航">
+      <a id="sidebar-logo" class="side-logo" href="/" aria-label="汐航">
+        <span>汐</span>
+        <strong>汐航</strong>
+      </a>
+      <nav id="sidebar-menu" class="side-nav admin-tree-nav">
+        <a href="/"><b>台</b><span>工作台</span></a>
+        <a href="/vault.html"><b>钥</b><span>星钥库</span></a>
+        <div id="nav-operations" class="nav-group">
+          <button id="nav-operations-toggle" class="nav-group-title" type="button">运营管理</button>
+          <div id="nav-operations-items" class="nav-group-items">
+            <a id="nav-users" class="active" href="#users" data-admin-panel="users"><b>用</b><span>用户管理</span></a>
+            <a id="nav-roles" href="#roles" data-admin-panel="roles"><b>角</b><span>角色管理</span></a>
+            <a id="nav-audit" href="#audit" data-admin-panel="audit"><b>审</b><span>日志审计</span></a>
+          </div>
         </div>
-        <div class="row-actions">
-          <button id="addGroupBtn" class="plain-btn" type="button">新增分组</button>
-          <button id="saveBtn" class="primary-btn" type="button">保存配置</button>
+        <div id="nav-config" class="nav-group">
+          <button id="nav-config-toggle" class="nav-group-title" type="button">系统配置</button>
+          <div id="nav-config-items" class="nav-group-items">
+            <a id="nav-system-config" href="#settings" data-admin-panel="settings"><b>全</b><span>全局设置</span></a>
+            <a id="nav-email" href="#email" data-admin-panel="email"><b>邮</b><span>邮件服务</span></a>
+            <a id="nav-security" href="#security" data-admin-panel="security"><b>安</b><span>安全策略</span></a>
+          </div>
+        </div>
+        <div id="nav-ops" class="nav-group">
+          <button id="nav-ops-toggle" class="nav-group-title" type="button">运维</button>
+          <div id="nav-ops-items" class="nav-group-items">
+            <a id="nav-monitor" href="#monitor" data-admin-panel="monitor"><b>监</b><span>系统监控</span></a>
+            <a id="nav-operation-logs" href="#logs" data-admin-panel="logs"><b>志</b><span>操作日志</span></a>
+            <a id="nav-backup" href="#backup" data-admin-panel="backup"><b>备</b><span>数据备份</span></a>
+          </div>
+        </div>
+      </nav>
+      <div id="user-profile" class="rail-note">
+        <span id="userName">-</span>
+        <small>Administrator</small>
+      </div>
+    </aside>
+
+    <main id="admin-page" class="console-main">
+      <header class="console-topbar">
+        <div>
+          <p class="eyebrow">ADMIN CONSOLE</p>
+          <h1 id="admin-title">管理中枢</h1>
+        </div>
+        <div class="console-user">
+          <button id="logoutBtn" type="button">退出</button>
+        </div>
+      </header>
+
+      <section id="admin-stats" class="admin-stats-grid">
+        <article>
+          <span>总用户</span>
+          <strong id="stat-total-users">0</strong>
+          <small>Members</small>
+        </article>
+        <article>
+          <span>在线用户</span>
+          <strong id="stat-online-users">-</strong>
+          <small>Online</small>
+        </article>
+        <article>
+          <span>今日新增</span>
+          <strong id="stat-new-users">-</strong>
+          <small>Today</small>
+        </article>
+        <article>
+          <span>健康度</span>
+          <strong id="stat-health">100</strong>
+          <small>Health</small>
+        </article>
+      </section>
+
+      <section class="command-strip compact-strip admin-command">
+        <div>
+          <p>运营管理</p>
+          <h2>管理员统一维护用户、角色、状态和站点入口，成员不能自行注册。</h2>
+        </div>
+        <div class="switch-tabs" role="tablist" aria-label="管理视图">
+          <button class="admin-tab active" type="button" data-admin-panel="users">用户管理</button>
+          <button class="admin-tab" type="button" data-admin-panel="sites">站点矩阵</button>
+          <button class="admin-tab" type="button" data-admin-panel="audit">日志审计</button>
         </div>
       </section>
-      <section class="admin-shell">
-        <div id="adminEditor" class="admin-editor">正在加载...</div>
+
+      <section id="usersPanel" class="board admin-board admin-panel" data-panel="users">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">User Registry</p>
+            <h2>用户管理</h2>
+            <p>创建账号、分配角色、调整状态，重置密码后用户首次登录必须改密。</p>
+          </div>
+          <label class="search-box">
+            <span>搜索</span>
+            <input id="admin-search" autocomplete="off" placeholder="按姓名或账号搜索" />
+          </label>
+        </div>
+        <form id="createUserForm" class="create-user-form">
+          <input id="newUsername" class="field-input" placeholder="账号，例如 zhangsan" autocomplete="off" />
+          <input id="newNick" class="field-input" placeholder="姓名/昵称" autocomplete="off" />
+          <input id="newPassword" class="field-input" type="password" placeholder="初始密码，至少 8 位" autocomplete="new-password" />
+          <select id="newRole" class="field-input">
+            <option value="member">普通成员</option>
+            <option value="admin">管理员</option>
+          </select>
+          <button class="primary-btn" type="submit">创建用户</button>
+        </form>
+        <div class="admin-table-head">
+          <span>ID / 姓名</span>
+          <span>昵称</span>
+          <span>角色</span>
+          <span>状态</span>
+          <span>星钥</span>
+          <span>操作</span>
+        </div>
+        <div id="userList" class="user-list">正在加载用户...</div>
+        <p id="userStatus" class="hint">账号创建后会自动启用首次改密。</p>
+      </section>
+
+      <section id="sitesPanel" class="board admin-board admin-panel hidden" data-panel="sites">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">Site Matrix</p>
+            <h2>站点矩阵</h2>
+            <p>维护工作台应用地图中的分组和系统入口。</p>
+          </div>
+          <div class="row-actions">
+            <button id="addGroupBtn" class="plain-btn" type="button">新增分组</button>
+            <button id="saveBtn" class="primary-btn" type="button">保存配置</button>
+          </div>
+        </div>
+        <div id="adminEditor" class="admin-editor">正在加载站点...</div>
         <p id="saveStatus" class="hint">数据源：MySQL</p>
       </section>
+
+      <section id="rolesPanel" class="board admin-board admin-panel hidden" data-panel="roles">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">Role Matrix</p>
+            <h2>角色管理</h2>
+            <p>当前采用两级权限：管理员负责用户、站点和配置维护，普通成员只能访问工作台和自己的星钥库。</p>
+          </div>
+        </div>
+        <div id="roleMatrix" class="role-grid"></div>
+      </section>
+
+      <section id="auditPanel" class="board admin-board admin-panel hidden" data-panel="audit">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">Audit Trail</p>
+            <h2>日志审计</h2>
+            <p>记录管理员创建用户、修改配置、保存站点和导出快照等关键操作。</p>
+          </div>
+          <button id="refreshAuditBtn" class="plain-btn" type="button">刷新日志</button>
+        </div>
+        <div id="auditList" class="audit-list">正在加载日志...</div>
+      </section>
+
+      <section id="settingsPanel" class="board admin-board admin-panel hidden" data-panel="settings">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">Global Settings</p>
+            <h2>全局设置</h2>
+            <p>维护产品名称、公司归属和前端访问地址。这些配置会写入 MySQL，便于后续统一读取。</p>
+          </div>
+        </div>
+        <form id="settingsForm" class="settings-form">
+          <label class="field">
+            <span>产品名称</span>
+            <input id="settingProductName" class="field-input" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>公司名称</span>
+            <input id="settingCompanyName" class="field-input" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>前端地址</span>
+            <input id="settingFrontendUrl" class="field-input" placeholder="http://127.0.0.1:2223" autocomplete="off" />
+          </label>
+          <button class="primary-btn" type="submit">保存全局设置</button>
+        </form>
+        <p id="settingsStatus" class="hint">配置保存后会进入审计日志。</p>
+      </section>
+
+      <section id="emailPanel" class="board admin-board admin-panel hidden" data-panel="email">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">Mail Service</p>
+            <h2>邮件服务</h2>
+            <p>预留通知服务配置，后续可用于密码重置通知、审计提醒和系统告警。</p>
+          </div>
+        </div>
+        <form id="emailSettingsForm" class="settings-form">
+          <label class="toggle-field">
+            <input id="settingSmtpEnabled" type="checkbox" />
+            <span>启用邮件服务</span>
+          </label>
+          <label class="field">
+            <span>SMTP 主机</span>
+            <input id="settingSmtpHost" class="field-input" placeholder="smtp.example.com" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>SMTP 端口</span>
+            <input id="settingSmtpPort" class="field-input" type="number" min="1" max="65535" />
+          </label>
+          <label class="field">
+            <span>发件人</span>
+            <input id="settingSmtpFrom" class="field-input" placeholder="汐航 <notice@example.com>" autocomplete="off" />
+          </label>
+          <button class="primary-btn" type="submit">保存邮件配置</button>
+        </form>
+        <p id="emailSettingsStatus" class="hint">邮件配置保存后会进入审计日志。</p>
+      </section>
+
+      <section id="securityPanel" class="board admin-board admin-panel hidden" data-panel="security">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">Security Policy</p>
+            <h2>安全策略</h2>
+            <p>集中维护密码、会话和 SSO 票据策略。后续可继续接入更严格的企业规则。</p>
+          </div>
+        </div>
+        <form id="securitySettingsForm" class="settings-form">
+          <label class="field">
+            <span>最小密码长度</span>
+            <input id="settingPasswordMinLength" class="field-input" type="number" min="8" max="64" />
+          </label>
+          <label class="field">
+            <span>会话有效小时数</span>
+            <input id="settingSessionHours" class="field-input" type="number" min="1" max="168" />
+          </label>
+          <label class="field">
+            <span>SSO 票据有效秒数</span>
+            <input id="settingSsoTicketTtlSeconds" class="field-input" type="number" min="30" max="3600" />
+          </label>
+          <label class="toggle-field">
+            <input id="settingRequireDingTalk" type="checkbox" />
+            <span>后续强制使用钉钉身份登录</span>
+          </label>
+          <button class="primary-btn" type="submit">保存安全策略</button>
+        </form>
+        <p id="securitySettingsStatus" class="hint">安全策略保存后会进入审计日志。</p>
+      </section>
+
+      <section id="monitorPanel" class="board admin-board admin-panel hidden" data-panel="monitor">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">System Monitor</p>
+            <h2>系统监控</h2>
+            <p>展示当前用户、站点、凭证、SSO 票据和审计数据的运行快照。</p>
+          </div>
+          <button id="refreshMonitorBtn" class="plain-btn" type="button">刷新监控</button>
+        </div>
+        <div id="monitorGrid" class="monitor-grid"></div>
+      </section>
+
+      <section id="logsPanel" class="board admin-board admin-panel hidden" data-panel="logs">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">Operation Logs</p>
+            <h2>操作日志</h2>
+            <p>和日志审计共用一套审计数据，方便运维人员快速追踪后台变更。</p>
+          </div>
+          <button id="refreshLogsBtn" class="plain-btn" type="button">刷新操作日志</button>
+        </div>
+        <div id="operationLogList" class="audit-list">正在加载日志...</div>
+      </section>
+
+      <section id="backupPanel" class="board admin-board admin-panel hidden" data-panel="backup">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">Backup Snapshot</p>
+            <h2>数据备份</h2>
+            <p>生成后台配置快照，包含站点矩阵、用户清单和系统配置，不导出任何明文密码。</p>
+          </div>
+          <button id="backupBtn" class="primary-btn" type="button">生成配置快照</button>
+        </div>
+        <div class="backup-box">
+          <label class="field">
+            <span>备份保留天数</span>
+            <input id="settingBackupRetentionDays" class="field-input" type="number" min="1" max="365" />
+          </label>
+          <pre id="backupPreview" class="backup-preview">点击“生成配置快照”后会在这里显示 JSON。</pre>
+        </div>
+        <p id="backupStatus" class="hint">配置快照不会导出任何明文密码。</p>
+      </section>
+
+      <footer class="console-footer">
+        <span>Version 0.1.0</span>
+        <span>© 2026 云南汐构信息技术有限公司</span>
+        <span>汐航</span>
+      </footer>
     </main>
+
     <script type="module" src="/src/admin.js"></script>
   </body>
 </html>

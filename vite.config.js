@@ -10,7 +10,9 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, 'frontend/index.html'),
         login: resolve(__dirname, 'frontend/login.html'),
-        admin: resolve(__dirname, 'frontend/admin.html')
+        changePassword: resolve(__dirname, 'frontend/change-password.html'),
+        admin: resolve(__dirname, 'frontend/admin.html'),
+        vault: resolve(__dirname, 'frontend/vault.html')
       }
     }
   }

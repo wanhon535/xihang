@@ -14,6 +14,7 @@ export async function api(path, options = {}) {
   if (!response.ok || payload.ok === false) {
     const error = new Error(payload.message || '请求失败');
     error.status = response.status;
+    error.code = payload.code;
     throw error;
   }
 
@@ -31,6 +32,12 @@ export async function requireUser() {
     redirectToLogin();
     return null;
   }
+
+  if (payload.user.mustChangePassword && window.location.pathname !== '/change-password.html') {
+    window.location.href = '/change-password.html';
+    return null;
+  }
+
   return payload.user;
 }
 

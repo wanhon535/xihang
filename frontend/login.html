@@ -3,29 +3,111 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>登录 - TideSail 汐航</title>
+    <title>登录 - 汐航</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
-  <body>
-    <header class="topbar">
-      <a class="brand" href="/"><span>TideSail</span><small>汐航</small></a>
-      <nav class="topnav"><span>钉钉登录</span></nav>
-    </header>
-    <main class="login-page">
-      <section class="login-card">
-        <p class="eyebrow">TIDESAIL</p>
-        <h1>登录汐航</h1>
-        <p class="muted">登录后访问 TideSail 汐航。管理员账号可进入后台维护全部分组和站点。</p>
-        <p id="errorText" class="error hidden"></p>
-        <a id="loginBtn" class="primary-btn" href="#">使用钉钉扫码</a>
-        <div class="divider"><span>或使用管理员账号</span></div>
-        <form id="passwordLoginForm" class="login-form">
-          <input id="usernameInput" class="field-input" name="username" placeholder="管理员账号" autocomplete="username" value="admin" />
-          <input id="passwordInput" class="field-input" name="password" type="password" placeholder="管理员密码" autocomplete="current-password" />
-          <button class="plain-btn login-submit" type="submit">账号密码登录</button>
-        </form>
-        <p class="hint">账号密码用于本平台后台管理；钉钉扫码用于团队统一登录。</p>
+  <body class="auth-page login-reference-page">
+    <main id="login-page" class="reference-login">
+      <section id="login-left" class="reference-login-left">
+        <div id="login-card" class="reference-login-card">
+          <div id="brand-top" class="reference-brand">
+            <div id="brand-logo">汐</div>
+            <div id="brand-name">汐航</div>
+            <div id="brand-sub">企业内部统一认证与项目凭证平台</div>
+          </div>
+
+          <div id="login-tabs" class="reference-tabs" role="tablist" aria-label="登录方式">
+            <button id="tab-password" class="tab-btn active" type="button" data-login-tab="password">密码登录</button>
+            <button id="tab-dingtalk" class="tab-btn" type="button" data-login-tab="dingtalk">钉钉登录</button>
+          </div>
+
+          <div id="password-panel" class="login-panel active">
+            <p id="errorText" class="error hidden"></p>
+            <form id="passwordLoginForm" class="reference-form">
+              <label class="form-group" for="usernameInput">
+                <span class="form-label">账号</span>
+                <span class="form-input-wrap">
+                  <input id="usernameInput" class="form-input" name="username" placeholder="请输入用户名" autocomplete="username" value="admin" />
+                </span>
+              </label>
+
+              <label class="form-group" for="passwordInput">
+                <span class="form-label">密码</span>
+                <span class="form-input-wrap">
+                  <input id="passwordInput" class="form-input" name="password" type="password" placeholder="请输入密码" autocomplete="current-password" />
+                  <button id="passwordToggleBtn" class="form-toggle" type="button" title="显示密码">显示</button>
+                </span>
+              </label>
+
+              <button id="passwordSubmitBtn" class="reference-submit" type="submit">
+                <span>登录</span>
+              </button>
+            </form>
+            <p class="reference-help">本地账号用于管理员维护站点、成员和初始化配置。</p>
+          </div>
+
+          <div id="dingtalk-panel" class="login-panel">
+            <a id="loginBtn" class="reference-dingtalk" href="#">
+              <span class="qrcode-box">钉</span>
+              <strong>钉钉扫码登录</strong>
+              <small><span></span>等待钉钉授权</small>
+            </a>
+            <p class="reference-help">钉钉回调配置完成后，员工可以直接扫码进入工作台。</p>
+          </div>
+
+          <div id="copyright-text" class="reference-copy">© 2026 云南汐构信息技术有限公司</div>
+        </div>
       </section>
+
+      <section id="product-preview" class="reference-preview" aria-label="产品预览">
+        <div id="preview-mockup" class="preview-mockup">
+          <div class="preview-header">
+            <div class="preview-dots">
+              <span class="preview-dot r"></span>
+              <span class="preview-dot y"></span>
+              <span class="preview-dot g"></span>
+            </div>
+          <div class="preview-title">汐航 · 工作台</div>
+            <div class="preview-search">Search</div>
+          </div>
+          <div class="preview-shell">
+            <aside class="preview-sidebar">
+              <span class="bar active"></span>
+              <span class="bar"></span>
+              <span class="bar"></span>
+            </aside>
+            <div class="preview-content">
+              <div class="preview-row">
+                <div class="preview-card">
+                  <strong>8</strong>
+                  <span>应用分组</span>
+                </div>
+                <div class="preview-card">
+                  <strong>24</strong>
+                  <span>系统入口</span>
+                </div>
+              </div>
+              <div class="preview-row">
+                <div class="preview-card">
+                  <strong>15</strong>
+                  <span>星钥记录</span>
+                </div>
+                <div class="preview-card">
+                  <strong>12</strong>
+                  <span>今日访问</span>
+                </div>
+              </div>
+              <div class="preview-lines">
+                <span class="preview-strip l"></span>
+                <span class="preview-strip m"></span>
+                <span class="preview-strip s"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer id="version-info" class="reference-version">Version 0.1.0</footer>
     </main>
     <script type="module" src="/src/login.js"></script>
   </body>

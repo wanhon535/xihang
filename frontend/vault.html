@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>星钥库 - 汐航</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body class="console-page keyring-page vault-reference-page">
+    <aside class="side-rail" aria-label="主导航">
+      <a class="side-logo" href="/" aria-label="汐航">
+        <span>汐</span>
+        <strong>汐航</strong>
+      </a>
+      <nav class="side-nav">
+        <a href="/"><b>台</b><span>工作台</span></a>
+        <a class="active" href="/vault.html"><b>钥</b><span>星钥库</span></a>
+        <a class="admin-only hidden" href="/admin.html"><b>管</b><span>管理中枢</span></a>
+      </nav>
+      <div class="rail-note">Private Keyring</div>
+    </aside>
+
+    <main id="vault-page" class="console-main">
+      <header class="console-topbar">
+        <div>
+          <p class="eyebrow">PRIVATE KEYRING</p>
+          <h1 id="vault-title">星钥库</h1>
+        </div>
+        <div class="console-user">
+          <span id="userName">-</span>
+          <button id="logoutBtn" type="button">退出</button>
+        </div>
+      </header>
+
+      <section class="vault-summary">
+        <article>
+          <span>总密钥</span>
+          <strong id="vaultTotalKeys">0</strong>
+          <small>全部项目凭证</small>
+        </article>
+        <article>
+          <span>活跃中</span>
+          <strong id="vaultActiveKeys">0</strong>
+          <small>可用记录</small>
+        </article>
+        <article>
+          <span>即将过期</span>
+          <strong id="vaultExpiringKeys">0</strong>
+          <small>待补充有效期</small>
+        </article>
+      </section>
+
+      <section id="vault-actions" class="vault-actions-bar">
+        <button id="newCredentialBtn" class="primary-btn" type="button">创建新密钥</button>
+        <label class="vault-search-field">
+          <span>搜索密钥</span>
+          <input id="vaultSearchInput" class="search-input" placeholder="项目、系统、账号、网址、IP 或备注" autocomplete="off" />
+        </label>
+        <div id="key-filters" class="key-filters">
+          <select id="categoryFilterInput" class="field-input compact-input" aria-label="按项目筛选">
+            <option value="">全部项目/系统</option>
+          </select>
+          <label class="toggle-line">
+            <input id="favoriteOnlyInput" type="checkbox" />
+            <span>只看常用</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="vault-layout vault-reference-layout">
+        <section class="board vault-panel">
+          <div class="board-head tight">
+            <div>
+              <p class="panel-label">Key Table</p>
+              <h2>项目密钥列表</h2>
+              <p id="credentialCount">0 条</p>
+            </div>
+          </div>
+          <div class="vault-table-head">
+            <span>名称</span>
+            <span>账号 / 地址</span>
+            <span>状态</span>
+            <span>操作</span>
+          </div>
+          <div id="credentialList" class="vault-list">正在加载...</div>
+        </section>
+
+        <section id="create-key-modal" class="board vault-editor-panel">
+          <div class="board-head tight">
+            <div>
+              <p class="panel-label">Key Editor</p>
+              <h2 id="formTitle">新增记录</h2>
+            </div>
+            <button id="clearFormBtn" class="plain-btn small" type="button">清空</button>
+          </div>
+          <form id="credentialForm" class="vault-form">
+            <label class="field">
+              <span>记录名称</span>
+              <input id="credentialTitleInput" class="field-input" name="title" placeholder="例如：云南项目-运营后台" required />
+            </label>
+            <label class="field">
+              <span>登录账号</span>
+              <input id="credentialUsernameInput" class="field-input" name="loginUsername" placeholder="邮箱、手机号或用户名" autocomplete="username" />
+            </label>
+            <div class="two-col-fields">
+              <label class="field">
+                <span>项目/系统</span>
+                <input id="credentialCategoryInput" class="field-input" name="category" list="categoryList" placeholder="例如：云南项目、服务器" />
+                <datalist id="categoryList"></datalist>
+              </label>
+              <label class="field">
+                <span>环境/标签</span>
+                <input id="credentialTagsInput" class="field-input" name="tags" placeholder="生产、测试、数据库" />
+              </label>
+            </div>
+            <label class="field">
+              <span>密钥/密码</span>
+              <div class="password-row">
+                <input id="credentialPasswordInput" class="field-input" name="password" type="password" placeholder="保存这个账号的密码或密钥" autocomplete="new-password" />
+                <button id="togglePasswordInputBtn" class="plain-btn small" type="button">显示</button>
+                <button id="generatePasswordBtn" class="plain-btn small" type="button">生成</button>
+              </div>
+              <div class="strength-line">
+                <span id="strengthBar" class="strength-bar"></span>
+                <b id="strengthText">未填写</b>
+              </div>
+            </label>
+            <label class="field">
+              <span>网址或 IP</span>
+              <input id="credentialUrlInput" class="field-input" name="url" placeholder="https://... 或 192.168.1.10:8080" />
+            </label>
+            <label class="field">
+              <span>描述/备注</span>
+              <textarea id="credentialNotesInput" class="field-input" name="notes" rows="4" placeholder="补充说明"></textarea>
+            </label>
+            <label class="toggle-line favorite-line">
+              <input id="credentialFavoriteInput" type="checkbox" />
+              <span>标记为常用</span>
+            </label>
+            <div class="form-actions">
+              <button id="saveCredentialBtn" class="primary-btn" type="submit">保存密钥</button>
+              <button id="deleteCredentialBtn" class="danger-btn hidden" type="button">删除记录</button>
+            </div>
+          </form>
+          <p id="formStatus" class="hint"></p>
+
+          <section class="generator-panel">
+            <div class="toolbar">
+              <strong>密码生成器</strong>
+              <span id="generatorLengthText" class="muted">18 位</span>
+            </div>
+            <input id="generatorLengthInput" class="range-input" type="range" min="12" max="32" value="18" />
+            <div class="generator-options">
+              <label class="toggle-line"><input id="generatorUpperInput" type="checkbox" checked /> 大写</label>
+              <label class="toggle-line"><input id="generatorLowerInput" type="checkbox" checked /> 小写</label>
+              <label class="toggle-line"><input id="generatorNumberInput" type="checkbox" checked /> 数字</label>
+              <label class="toggle-line"><input id="generatorSymbolInput" type="checkbox" checked /> 符号</label>
+            </div>
+            <div class="form-actions">
+              <button id="applyGeneratedPasswordBtn" class="plain-btn" type="button">生成并填入</button>
+              <button id="copyGeneratedPasswordBtn" class="plain-btn" type="button">复制生成密码</button>
+            </div>
+            <code id="generatedPasswordPreview" class="generated-preview"></code>
+          </section>
+        </section>
+      </section>
+
+      <footer class="console-footer">
+        <span>Version 0.1.0</span>
+        <span>© 2026 云南汐构信息技术有限公司</span>
+        <span>汐航</span>
+      </footer>
+    </main>
+
+    <script type="module" src="/src/vault.js"></script>
+  </body>
+</html>

@@ -11,6 +11,36 @@ const seedFile = path.join(rootDir, 'data', 'sites.json');
 
 let pool;
 
+const DEFAULT_SYSTEM_SETTINGS = {
+  productName: '汐航',
+  companyName: '云南汐构信息技术有限公司',
+  frontendUrl: 'http://127.0.0.1:2223',
+  passwordMinLength: '8',
+  sessionHours: '8',
+  ssoTicketTtlSeconds: '120',
+  requireDingTalk: 'false',
+  smtpEnabled: 'false',
+  smtpHost: '',
+  smtpPort: '465',
+  smtpFrom: '',
+  backupRetentionDays: '30'
+};
+
+const SYSTEM_SETTING_LABELS = {
+  productName: '产品名称',
+  companyName: '公司名称',
+  frontendUrl: '前端地址',
+  passwordMinLength: '最小密码长度',
+  sessionHours: '会话有效小时数',
+  ssoTicketTtlSeconds: 'SSO 票据有效秒数',
+  requireDingTalk: '是否强制钉钉登录',
+  smtpEnabled: '是否启用邮件服务',
+  smtpHost: 'SMTP 主机',
+  smtpPort: 'SMTP 端口',
+  smtpFrom: '发件人',
+  backupRetentionDays: '备份保留天数'
+};
+
 export function getPool() {
   if (!pool) {
     pool = mysql.createPool({
@@ -52,13 +82,17 @@ export async function initDatabase() {
       unionid VARCHAR(128) NULL,
       openid VARCHAR(128) NULL,
       role VARCHAR(32) NOT NULL DEFAULT 'member',
+      status VARCHAR(32) NOT NULL DEFAULT 'active',
+      must_change_password TINYINT(1) NOT NULL DEFAULT 0,
+      password_changed_at DATETIME NULL,
       last_login_at DATETIME NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       UNIQUE KEY uk_users_username (username),
       UNIQUE KEY uk_users_unionid (unionid),
-      KEY idx_users_role (role)
+      KEY idx_users_role (role),
+      KEY idx_users_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
@@ -107,6 +141,66 @@ export async function initDatabase() {
       KEY idx_sso_tickets_expires (expires_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS personal_credentials (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      user_id BIGINT UNSIGNED NOT NULL,
+      title VARCHAR(180) NOT NULL,
+      login_username VARCHAR(255) NOT NULL DEFAULT '',
+      password_cipher TEXT NOT NULL,
+      password_iv VARCHAR(64) NOT NULL,
+      password_tag VARCHAR(64) NOT NULL,
+      category VARCHAR(120) NOT NULL DEFAULT '默认',
+      tags TEXT NULL,
+      is_favorite TINYINT(1) NOT NULL DEFAULT 0,
+      url VARCHAR(1000) NOT NULL DEFAULT '',
+      notes TEXT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_personal_credentials_user_favorite (user_id, is_favorite, updated_at),
+      KEY idx_personal_credentials_user_updated (user_id, updated_at),
+      CONSTRAINT fk_personal_credentials_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      setting_key VARCHAR(80) NOT NULL,
+      setting_value TEXT NOT NULL,
+      description VARCHAR(255) NOT NULL DEFAULT '',
+      updated_by BIGINT UNSIGNED NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (setting_key),
+      KEY idx_system_settings_updated_by (updated_by),
+      CONSTRAINT fk_system_settings_updated_by FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      actor_user_id BIGINT UNSIGNED NULL,
+      actor_name VARCHAR(160) NOT NULL DEFAULT '',
+      action VARCHAR(80) NOT NULL,
+      target_type VARCHAR(80) NOT NULL DEFAULT '',
+      target_id VARCHAR(120) NOT NULL DEFAULT '',
+      summary VARCHAR(600) NOT NULL DEFAULT '',
+      ip VARCHAR(80) NOT NULL DEFAULT '',
+      user_agent VARCHAR(500) NOT NULL DEFAULT '',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_admin_audit_logs_created (created_at),
+      KEY idx_admin_audit_logs_actor (actor_user_id),
+      KEY idx_admin_audit_logs_action (action),
+      CONSTRAINT fk_admin_audit_logs_actor FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await ensureUserColumns(db);
+  await ensurePersonalCredentialColumns(db);
+  await ensureSystemSettings();
 
   const [[{ count }]] = await db.query('SELECT COUNT(*) AS count FROM nav_groups');
   if (count === 0) {
@@ -224,6 +318,113 @@ export async function cleanExpiredSsoTickets() {
   await db.query('DELETE FROM sso_tickets WHERE expires_at < DATE_SUB(NOW(), INTERVAL 1 DAY) OR consumed_at IS NOT NULL');
 }
 
+export async function listPersonalCredentials(userId) {
+  const db = getPool();
+  const [rows] = await db.query(
+    `SELECT id, title, login_username AS loginUsername, category, tags, is_favorite AS isFavorite,
+       url, notes, created_at AS createdAt, updated_at AS updatedAt
+     FROM personal_credentials
+     WHERE user_id = ?
+     ORDER BY is_favorite DESC, updated_at DESC, id DESC`,
+    [userId]
+  );
+
+  return rows.map(mapPersonalCredential);
+}
+
+export async function createPersonalCredential(userId, value) {
+  const credential = normalizePersonalCredential(value, { requirePassword: true });
+  const encrypted = encryptVaultSecret(userId, credential.password);
+  const db = getPool();
+
+  const [result] = await db.query(
+    `INSERT INTO personal_credentials
+       (user_id, title, login_username, password_cipher, password_iv, password_tag, category, tags, is_favorite, url, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      userId,
+      credential.title,
+      credential.loginUsername,
+      encrypted.cipherText,
+      encrypted.iv,
+      encrypted.tag,
+      credential.category,
+      JSON.stringify(credential.tags),
+      credential.isFavorite ? 1 : 0,
+      credential.url,
+      credential.notes
+    ]
+  );
+
+  return findPersonalCredentialById(userId, result.insertId);
+}
+
+export async function updatePersonalCredential(userId, credentialId, value) {
+  const credential = normalizePersonalCredential(value, { requirePassword: false });
+  const fields = ['title = ?', 'login_username = ?', 'category = ?', 'tags = ?', 'is_favorite = ?', 'url = ?', 'notes = ?'];
+  const params = [
+    credential.title,
+    credential.loginUsername,
+    credential.category,
+    JSON.stringify(credential.tags),
+    credential.isFavorite ? 1 : 0,
+    credential.url,
+    credential.notes
+  ];
+
+  if (credential.hasPassword) {
+    const encrypted = encryptVaultSecret(userId, credential.password);
+    fields.push('password_cipher = ?', 'password_iv = ?', 'password_tag = ?');
+    params.push(encrypted.cipherText, encrypted.iv, encrypted.tag);
+  }
+
+  params.push(credentialId, userId);
+
+  const db = getPool();
+  const [result] = await db.query(
+    `UPDATE personal_credentials SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`,
+    params
+  );
+
+  if (result.affectedRows === 0) {
+    return null;
+  }
+
+  return findPersonalCredentialById(userId, credentialId);
+}
+
+export async function deletePersonalCredential(userId, credentialId) {
+  const db = getPool();
+  const [result] = await db.query('DELETE FROM personal_credentials WHERE id = ? AND user_id = ?', [
+    credentialId,
+    userId
+  ]);
+
+  return result.affectedRows > 0;
+}
+
+export async function getPersonalCredentialSecret(userId, credentialId) {
+  const db = getPool();
+  const [rows] = await db.query(
+    `SELECT id, title, password_cipher AS passwordCipher, password_iv AS passwordIv, password_tag AS passwordTag
+     FROM personal_credentials
+     WHERE id = ? AND user_id = ?
+     LIMIT 1`,
+    [credentialId, userId]
+  );
+  const record = rows[0];
+
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    title: record.title,
+    password: decryptVaultSecret(userId, record)
+  };
+}
+
 export async function ensureLocalAdminUser() {
   const username = process.env.LOCAL_ADMIN_USERNAME || 'admin';
   const password = process.env.LOCAL_ADMIN_PASSWORD || 'admin123456';
@@ -231,11 +432,287 @@ export async function ensureLocalAdminUser() {
   const db = getPool();
 
   await db.query(
-    `INSERT INTO users (username, password_hash, nick, role)
-     VALUES (?, ?, ?, 'admin')
-     ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), nick = VALUES(nick), role = 'admin'`,
+    `INSERT INTO users (username, password_hash, nick, role, status, must_change_password)
+     VALUES (?, ?, ?, 'admin', 'active', 0)
+     ON DUPLICATE KEY UPDATE
+       password_hash = VALUES(password_hash),
+       nick = VALUES(nick),
+       role = 'admin',
+       status = 'active',
+       must_change_password = 0`,
     [username, passwordHash, username]
   );
+}
+
+export async function listUsers() {
+  const db = getPool();
+  const [rows] = await db.query(
+    `SELECT
+       u.id, u.username, u.nick, u.unionid, u.openid, u.role, u.status,
+       u.must_change_password AS mustChangePassword,
+       u.password_changed_at AS passwordChangedAt,
+       u.last_login_at AS lastLoginAt, u.created_at AS createdAt, u.updated_at AS updatedAt,
+       COUNT(pc.id) AS vaultCount
+     FROM users u
+     LEFT JOIN personal_credentials pc ON pc.user_id = u.id
+     GROUP BY u.id
+     ORDER BY FIELD(u.role, 'admin', 'member') ASC, u.updated_at DESC, u.id DESC`
+  );
+
+  return rows.map(mapUser);
+}
+
+export async function createLocalUser(value) {
+  const settings = await listSystemSettings();
+  const user = normalizeLocalUser(value, {
+    requirePassword: true,
+    passwordMinLength: Number(settings.passwordMinLength || 8)
+  });
+  const passwordHash = await bcrypt.hash(user.password, 10);
+  const db = getPool();
+
+  try {
+    const [result] = await db.query(
+      `INSERT INTO users (username, password_hash, nick, role, status, must_change_password)
+       VALUES (?, ?, ?, ?, ?, 1)`,
+      [user.username, passwordHash, user.nick, user.role, user.status]
+    );
+
+    return findUserById(result.insertId);
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      throw new Error('账号已存在。');
+    }
+    throw error;
+  }
+}
+
+export async function updateUser(userId, value) {
+  const user = normalizeUserUpdate(value);
+  const db = getPool();
+  const [result] = await db.query(
+    `UPDATE users
+     SET nick = ?, role = ?, status = ?
+     WHERE id = ?`,
+    [user.nick, user.role, user.status, userId]
+  );
+
+  if (result.affectedRows === 0) {
+    return null;
+  }
+
+  return findUserById(userId);
+}
+
+export async function resetUserPassword(userId, password) {
+  const settings = await listSystemSettings();
+  const normalizedPassword = normalizePassword(password, Number(settings.passwordMinLength || 8));
+  const passwordHash = await bcrypt.hash(normalizedPassword, 10);
+  const db = getPool();
+  const [result] = await db.query(
+    'UPDATE users SET password_hash = ?, must_change_password = 1, password_changed_at = NULL WHERE id = ?',
+    [passwordHash, userId]
+  );
+
+  if (result.affectedRows === 0) {
+    return null;
+  }
+
+  return findUserById(userId);
+}
+
+export async function deleteUser(userId) {
+  const db = getPool();
+  const [result] = await db.query('DELETE FROM users WHERE id = ?', [userId]);
+  return result.affectedRows > 0;
+}
+
+export async function getAdminOverview() {
+  const db = getPool();
+  const [[userStats]] = await db.query(`
+    SELECT
+      COUNT(*) AS totalUsers,
+      SUM(status = 'active') AS activeUsers,
+      SUM(status = 'disabled') AS disabledUsers,
+      SUM(role = 'admin') AS adminUsers,
+      SUM(role = 'member') AS memberUsers,
+      SUM(last_login_at >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)) AS onlineUsers,
+      SUM(DATE(created_at) = CURDATE()) AS newUsersToday
+    FROM users
+  `);
+  const [[siteStats]] = await db.query(`
+    SELECT
+      (SELECT COUNT(*) FROM nav_groups) AS groupCount,
+      (SELECT COUNT(*) FROM nav_sites) AS siteCount,
+      (SELECT COUNT(*) FROM personal_credentials) AS credentialCount,
+      (SELECT COUNT(*) FROM sso_tickets WHERE consumed_at IS NULL AND expires_at > NOW()) AS activeSsoTickets
+  `);
+  const [[auditStats]] = await db.query(`
+    SELECT COUNT(*) AS todayAuditLogs
+    FROM admin_audit_logs
+    WHERE DATE(created_at) = CURDATE()
+  `);
+  const settings = await listSystemSettings();
+
+  return {
+    totalUsers: Number(userStats.totalUsers || 0),
+    activeUsers: Number(userStats.activeUsers || 0),
+    disabledUsers: Number(userStats.disabledUsers || 0),
+    adminUsers: Number(userStats.adminUsers || 0),
+    memberUsers: Number(userStats.memberUsers || 0),
+    onlineUsers: Number(userStats.onlineUsers || 0),
+    newUsersToday: Number(userStats.newUsersToday || 0),
+    groupCount: Number(siteStats.groupCount || 0),
+    siteCount: Number(siteStats.siteCount || 0),
+    credentialCount: Number(siteStats.credentialCount || 0),
+    activeSsoTickets: Number(siteStats.activeSsoTickets || 0),
+    todayAuditLogs: Number(auditStats.todayAuditLogs || 0),
+    health: 100,
+    settings
+  };
+}
+
+export async function listSystemSettings() {
+  const db = getPool();
+  const [rows] = await db.query(
+    'SELECT setting_key AS settingKey, setting_value AS settingValue FROM system_settings ORDER BY setting_key ASC'
+  );
+  const settings = { ...DEFAULT_SYSTEM_SETTINGS };
+
+  rows.forEach((row) => {
+    if (Object.prototype.hasOwnProperty.call(settings, row.settingKey)) {
+      settings[row.settingKey] = row.settingValue ?? '';
+    }
+  });
+
+  return settings;
+}
+
+export async function updateSystemSettings(value, actorUserId = null) {
+  const settings = normalizeSystemSettings(value);
+  const db = getPool();
+
+  for (const [key, settingValue] of Object.entries(settings)) {
+    await db.query(
+      `INSERT INTO system_settings (setting_key, setting_value, description, updated_by)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         setting_value = VALUES(setting_value),
+         description = VALUES(description),
+         updated_by = VALUES(updated_by)`,
+      [key, settingValue, SYSTEM_SETTING_LABELS[key] || '', actorUserId]
+    );
+  }
+
+  return listSystemSettings();
+}
+
+export async function listAuditLogs(limit = 80) {
+  const db = getPool();
+  const normalizedLimit = Math.min(Math.max(Number(limit) || 80, 1), 200);
+  const [rows] = await db.query(
+    `SELECT id, actor_user_id AS actorUserId, actor_name AS actorName, action, target_type AS targetType,
+       target_id AS targetId, summary, ip, user_agent AS userAgent, created_at AS createdAt
+     FROM admin_audit_logs
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`,
+    [normalizedLimit]
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    actorUserId: row.actorUserId,
+    actorName: row.actorName || '',
+    action: row.action || '',
+    targetType: row.targetType || '',
+    targetId: row.targetId || '',
+    summary: row.summary || '',
+    ip: row.ip || '',
+    userAgent: row.userAgent || '',
+    createdAt: row.createdAt
+  }));
+}
+
+export async function recordAuditLog({ actor, action, targetType = '', targetId = '', summary = '', ip = '', userAgent = '' }) {
+  const db = getPool();
+  await db.query(
+    `INSERT INTO admin_audit_logs
+       (actor_user_id, actor_name, action, target_type, target_id, summary, ip, user_agent)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      actor?.id || null,
+      String(actor?.nick || actor?.username || '').slice(0, 160),
+      String(action || '').slice(0, 80),
+      String(targetType || '').slice(0, 80),
+      String(targetId || '').slice(0, 120),
+      String(summary || '').slice(0, 600),
+      String(ip || '').slice(0, 80),
+      String(userAgent || '').slice(0, 500)
+    ]
+  );
+}
+
+export async function createAdminBackupSnapshot() {
+  const [groups, users, settings, overview] = await Promise.all([
+    getSiteGroups(),
+    listUsers(),
+    listSystemSettings(),
+    getAdminOverview()
+  ]);
+
+  return {
+    product: settings.productName || '汐航',
+    exportedAt: new Date().toISOString(),
+    overview,
+    settings,
+    groups,
+    users: users.map((user) => ({
+      id: user.id,
+      username: user.username,
+      nick: user.nick,
+      role: user.role,
+      status: user.status,
+      authType: user.authType,
+      mustChangePassword: user.mustChangePassword,
+      vaultCount: user.vaultCount,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    }))
+  };
+}
+
+export async function changeOwnPassword(userId, currentPassword, nextPassword) {
+  const db = getPool();
+  const [rows] = await db.query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+  const user = rows[0];
+
+  if (!user) {
+    return null;
+  }
+
+  if (!(await bcrypt.compare(String(currentPassword || ''), user.password_hash))) {
+    throw new Error('当前密码不正确。');
+  }
+
+  const settings = await listSystemSettings();
+  const normalizedPassword = normalizePassword(nextPassword, Number(settings.passwordMinLength || 8));
+  if (String(currentPassword || '') === normalizedPassword) {
+    throw new Error('新密码不能和当前密码相同。');
+  }
+
+  const passwordHash = await bcrypt.hash(normalizedPassword, 10);
+  await db.query(
+    'UPDATE users SET password_hash = ?, must_change_password = 0, password_changed_at = NOW() WHERE id = ?',
+    [passwordHash, userId]
+  );
+
+  return findUserById(userId);
+}
+
+export async function findUserById(userId) {
+  const db = getPool();
+  const [rows] = await db.query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+  return rows[0] ? mapUser(rows[0]) : null;
 }
 
 export async function findUserByUsername(username) {
@@ -256,12 +733,13 @@ export async function upsertDingTalkUser(user, role = 'member') {
   const db = getPool();
 
   await db.query(
-    `INSERT INTO users (username, password_hash, nick, unionid, openid, role, last_login_at)
-     VALUES (?, ?, ?, ?, ?, ?, NOW())
+    `INSERT INTO users (username, password_hash, nick, unionid, openid, role, status, must_change_password, last_login_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', 0, NOW())
      ON DUPLICATE KEY UPDATE
        nick = VALUES(nick),
        openid = VALUES(openid),
        role = IF(role = 'admin', 'admin', VALUES(role)),
+       status = IF(status = 'disabled', 'disabled', 'active'),
        last_login_at = NOW()`,
     [username, passwordHash, user.nick || username, user.unionid || null, user.openid || null, role]
   );
@@ -285,6 +763,201 @@ async function seedFromJson() {
       throw error;
     }
   }
+}
+
+async function ensureUserColumns(db) {
+  const [columns] = await db.query(
+    `SELECT COLUMN_NAME AS columnName
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'`
+  );
+  const existingColumns = new Set(columns.map((column) => column.columnName));
+
+  if (!existingColumns.has('status')) {
+    await db.query("ALTER TABLE users ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active' AFTER role");
+  }
+
+  if (!existingColumns.has('must_change_password')) {
+    await db.query('ALTER TABLE users ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0 AFTER status');
+  }
+
+  if (!existingColumns.has('password_changed_at')) {
+    await db.query('ALTER TABLE users ADD COLUMN password_changed_at DATETIME NULL AFTER must_change_password');
+  }
+
+  const [indexes] = await db.query("SHOW INDEX FROM users WHERE Key_name = 'idx_users_status'");
+  if (indexes.length === 0) {
+    await db.query('ALTER TABLE users ADD INDEX idx_users_status (status)');
+  }
+}
+
+async function ensurePersonalCredentialColumns(db) {
+  const [columns] = await db.query(
+    `SELECT COLUMN_NAME AS columnName
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'personal_credentials'`
+  );
+  const existingColumns = new Set(columns.map((column) => column.columnName));
+
+  const columnSql = [
+    ['category', "ALTER TABLE personal_credentials ADD COLUMN category VARCHAR(120) NOT NULL DEFAULT '默认' AFTER password_tag"],
+    ['tags', 'ALTER TABLE personal_credentials ADD COLUMN tags TEXT NULL AFTER category'],
+    ['is_favorite', 'ALTER TABLE personal_credentials ADD COLUMN is_favorite TINYINT(1) NOT NULL DEFAULT 0 AFTER tags']
+  ];
+
+  for (const [columnName, sql] of columnSql) {
+    if (!existingColumns.has(columnName)) {
+      await db.query(sql);
+    }
+  }
+
+  const [indexes] = await db.query("SHOW INDEX FROM personal_credentials WHERE Key_name = 'idx_personal_credentials_user_favorite'");
+  if (indexes.length === 0) {
+    await db.query(
+      'ALTER TABLE personal_credentials ADD INDEX idx_personal_credentials_user_favorite (user_id, is_favorite, updated_at)'
+    );
+  }
+}
+
+async function ensureSystemSettings() {
+  const db = getPool();
+
+  for (const [key, value] of Object.entries(DEFAULT_SYSTEM_SETTINGS)) {
+    await db.query(
+      `INSERT INTO system_settings (setting_key, setting_value, description)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE setting_key = setting_key`,
+      [key, value, SYSTEM_SETTING_LABELS[key] || '']
+    );
+  }
+}
+
+function mapUser(row) {
+  return {
+    id: row.id,
+    username: row.username || '',
+    nick: row.nick || row.username || '',
+    unionid: row.unionid || '',
+    openid: row.openid || '',
+    role: normalizeRole(row.role),
+    status: normalizeStatus(row.status),
+    mustChangePassword: Boolean(row.mustChangePassword ?? row.must_change_password),
+    passwordChangedAt: row.passwordChangedAt || row.password_changed_at || null,
+    authType: row.unionid ? 'dingtalk' : 'local',
+    lastLoginAt: row.lastLoginAt || row.last_login_at || null,
+    createdAt: row.createdAt || row.created_at || null,
+    updatedAt: row.updatedAt || row.updated_at || null,
+    vaultCount: Number(row.vaultCount || 0)
+  };
+}
+
+function normalizeLocalUser(value, { requirePassword = false, passwordMinLength = 8 } = {}) {
+  if (!value || typeof value !== 'object') {
+    throw new Error('请求参数无效。');
+  }
+
+  const username = String(value.username || '').trim();
+  if (!/^[A-Za-z0-9_.@-]{3,120}$/.test(username)) {
+    throw new Error('账号只能包含字母、数字、下划线、点、@ 或短横线，长度至少 3 位。');
+  }
+
+  return {
+    username,
+    nick: String(value.nick || username).trim().slice(0, 160),
+    password: requirePassword ? normalizePassword(value.password, passwordMinLength) : '',
+    role: normalizeRole(value.role),
+    status: normalizeStatus(value.status)
+  };
+}
+
+function normalizeUserUpdate(value) {
+  if (!value || typeof value !== 'object') {
+    throw new Error('请求参数无效。');
+  }
+
+  return {
+    nick: String(value.nick || '').trim().slice(0, 160),
+    role: normalizeRole(value.role),
+    status: normalizeStatus(value.status)
+  };
+}
+
+function normalizePassword(value, minLength = 8) {
+  const password = String(value || '');
+  const normalizedMinLength = clampInteger(minLength, 8, 64, 8);
+  if (password.length < normalizedMinLength) {
+    throw new Error(`密码至少需要 ${normalizedMinLength} 位。`);
+  }
+  if (password.length > 128) {
+    throw new Error('密码不能超过 128 位。');
+  }
+  return password;
+}
+
+function normalizeRole(value) {
+  return value === 'admin' ? 'admin' : 'member';
+}
+
+function normalizeStatus(value) {
+  return value === 'disabled' ? 'disabled' : 'active';
+}
+
+function normalizeSystemSettings(value) {
+  if (!value || typeof value !== 'object') {
+    throw new Error('配置参数无效。');
+  }
+
+  const settings = {};
+  for (const key of Object.keys(DEFAULT_SYSTEM_SETTINGS)) {
+    const rawValue = Object.prototype.hasOwnProperty.call(value, key) ? value[key] : DEFAULT_SYSTEM_SETTINGS[key];
+    settings[key] = normalizeSystemSettingValue(key, rawValue);
+  }
+
+  return settings;
+}
+
+function normalizeSystemSettingValue(key, value) {
+  if (key === 'requireDingTalk' || key === 'smtpEnabled') {
+    return String(Boolean(value === true || value === 'true'));
+  }
+
+  if (key === 'passwordMinLength') {
+    return String(clampInteger(value, 8, 64, 8));
+  }
+
+  if (key === 'sessionHours') {
+    return String(clampInteger(value, 1, 168, 8));
+  }
+
+  if (key === 'ssoTicketTtlSeconds') {
+    return String(clampInteger(value, 30, 3600, 120));
+  }
+
+  if (key === 'smtpPort') {
+    return String(clampInteger(value, 1, 65535, 465));
+  }
+
+  if (key === 'backupRetentionDays') {
+    return String(clampInteger(value, 1, 365, 30));
+  }
+
+  if (key === 'frontendUrl') {
+    const text = String(value || '').trim();
+    if (text && !isHttpUrl(text)) {
+      throw new Error('前端地址必须是 http 或 https 地址。');
+    }
+    return text.slice(0, 500);
+  }
+
+  return String(value || '').trim().slice(0, 500);
+}
+
+function clampInteger(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isInteger(number)) {
+    return fallback;
+  }
+  return Math.min(Math.max(number, min), max);
 }
 
 function normalizeSiteGroups(value) {
@@ -329,6 +1002,147 @@ function parseTags(value) {
       .map((tag) => tag.trim())
       .filter(Boolean);
   }
+}
+
+async function findPersonalCredentialById(userId, credentialId) {
+  const db = getPool();
+  const [rows] = await db.query(
+    `SELECT id, title, login_username AS loginUsername, category, tags, is_favorite AS isFavorite,
+       url, notes, created_at AS createdAt, updated_at AS updatedAt
+     FROM personal_credentials
+     WHERE id = ? AND user_id = ?
+     LIMIT 1`,
+    [credentialId, userId]
+  );
+
+  return rows[0] ? mapPersonalCredential(rows[0]) : null;
+}
+
+function mapPersonalCredential(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    loginUsername: row.loginUsername || '',
+    category: row.category || '默认',
+    tags: parseTags(row.tags),
+    isFavorite: Boolean(row.isFavorite),
+    url: row.url || '',
+    notes: row.notes || '',
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+
+function normalizePersonalCredential(value, { requirePassword = false } = {}) {
+  if (!value || typeof value !== 'object') {
+    throw new Error('请求参数无效。');
+  }
+
+  const hasPassword = Object.prototype.hasOwnProperty.call(value, 'password');
+  const credential = {
+    title: String(value.title || '').trim(),
+    loginUsername: String(value.loginUsername || '').trim(),
+    password: hasPassword ? String(value.password || '') : '',
+    hasPassword,
+    category: String(value.category || '默认').trim() || '默认',
+    tags: normalizeTags(value.tags),
+    isFavorite: Boolean(value.isFavorite),
+    url: String(value.url || '').trim(),
+    notes: String(value.notes || '').trim()
+  };
+
+  if (!credential.title) {
+    throw new Error('记录名称不能为空。');
+  }
+
+  if (credential.url && !isCredentialEndpoint(credential.url)) {
+    throw new Error('网址或 IP 格式不正确。可填写 https://...、域名、IP:端口 或 localhost:端口。');
+  }
+
+  if (requirePassword && !credential.password) {
+    throw new Error('密码不能为空。');
+  }
+
+  if (credential.hasPassword && !credential.password) {
+    throw new Error('密码不能为空。');
+  }
+
+  return credential;
+}
+
+function normalizeTags(value) {
+  const tags = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(/[,，]/);
+
+  return [...new Set(tags.map((tag) => String(tag).trim()).filter(Boolean))].slice(0, 12);
+}
+
+function isHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isCredentialEndpoint(value) {
+  const text = String(value || '').trim();
+  if (!text || text.length > 1000 || /\s/.test(text)) {
+    return false;
+  }
+
+  if (/^https?:\/\//i.test(text)) {
+    return isHttpUrl(text);
+  }
+
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(text)) {
+    return false;
+  }
+
+  const endpointPattern =
+    /^(localhost|(\d{1,3}\.){3}\d{1,3}|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*)(:\d{1,5})?(\/\S*)?$/i;
+  return endpointPattern.test(text);
+}
+
+function encryptVaultSecret(userId, value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getVaultKey(), iv);
+  cipher.setAAD(Buffer.from(String(userId)));
+
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+
+  return {
+    cipherText: encrypted.toString('base64'),
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64')
+  };
+}
+
+function decryptVaultSecret(userId, record) {
+  try {
+    const decipher = crypto.createDecipheriv(
+      'aes-256-gcm',
+      getVaultKey(),
+      Buffer.from(record.passwordIv, 'base64')
+    );
+    decipher.setAAD(Buffer.from(String(userId)));
+    decipher.setAuthTag(Buffer.from(record.passwordTag, 'base64'));
+
+    return Buffer.concat([
+      decipher.update(Buffer.from(record.passwordCipher, 'base64')),
+      decipher.final()
+    ]).toString('utf8');
+  } catch {
+    throw new Error('密码记录无法解密，请确认 VAULT_ENCRYPTION_KEY 与创建记录时一致。');
+  }
+}
+
+function getVaultKey() {
+  const secret = process.env.VAULT_ENCRYPTION_KEY || process.env.SESSION_SECRET || 'dev-only-vault-key-change-me';
+  return crypto.createHash('sha256').update(secret).digest();
 }
 
 function toMysqlDate(value) {

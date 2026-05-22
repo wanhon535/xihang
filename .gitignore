@@ -1,4 +1,10 @@
 node_modules/
+.npm-cache/
+.pm2/
+.local-start-tidesail.cmd
+.local-stop-tidesail.cmd
+.local-backend.cmd
+.local-frontend.cmd
 dist/
 **/dist/
 .env
