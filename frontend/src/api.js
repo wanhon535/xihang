@@ -47,7 +47,8 @@ export async function logout() {
 }
 
 export function createSsoUrl(site) {
-  const url = new URL(`${API_BASE_URL}/api/sso/authorize`);
+  const urlStr = window.location.origin + '/api/sso/authorize';
+  const url = new URL(urlStr);
   if (site && typeof site === 'object') {
     if (site.id) {
       url.searchParams.set('siteId', site.id);
