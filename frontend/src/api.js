@@ -46,8 +46,17 @@ export async function logout() {
   redirectToLogin();
 }
 
-export function createSsoUrl(targetUrl) {
+export function createSsoUrl(site) {
   const url = new URL(`${API_BASE_URL}/api/sso/authorize`);
-  url.searchParams.set('redirect', targetUrl);
+  if (site && typeof site === 'object') {
+    if (site.id) {
+      url.searchParams.set('siteId', site.id);
+    } else {
+      url.searchParams.set('redirect', site.url || '');
+    }
+    return url.toString();
+  }
+
+  url.searchParams.set('redirect', site);
   return url.toString();
 }

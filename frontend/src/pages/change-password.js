@@ -1,4 +1,4 @@
-import { api, redirectToLogin } from './api.js';
+﻿import { api, redirectToLogin } from '../api.js';
 
 const form = document.querySelector('#changePasswordForm');
 const currentPasswordInput = document.querySelector('#currentPasswordInput');
@@ -86,3 +86,4 @@ function scorePassword(value) {
   }
   return 1;
 }
+

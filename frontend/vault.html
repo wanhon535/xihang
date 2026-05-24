@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>星钥库 - 汐航</title>
-    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/styles/styles.css" />
   </head>
   <body class="console-page keyring-page vault-reference-page">
     <aside class="side-rail" aria-label="主导航">
@@ -25,6 +25,7 @@
         <div>
           <p class="eyebrow">PRIVATE KEYRING</p>
           <h1 id="vault-title">星钥库</h1>
+          <p class="topbar-subtitle">每个账号只看见自己的项目凭证，管理员也只能管用户和站点入口。</p>
         </div>
         <div class="console-user">
           <span id="userName">-</span>
@@ -51,9 +52,9 @@
       </section>
 
       <section id="vault-actions" class="vault-actions-bar">
-        <button id="newCredentialBtn" class="primary-btn" type="button">创建新密钥</button>
+        <button id="newCredentialBtn" class="primary-btn" type="button">新增项目凭证</button>
         <label class="vault-search-field">
-          <span>搜索密钥</span>
+          <span>搜索项目凭证</span>
           <input id="vaultSearchInput" class="search-input" placeholder="项目、系统、账号、网址、IP 或备注" autocomplete="off" />
         </label>
         <div id="key-filters" class="key-filters">
@@ -72,7 +73,7 @@
           <div class="board-head tight">
             <div>
               <p class="panel-label">Key Table</p>
-              <h2>项目密钥列表</h2>
+              <h2>项目凭证列表</h2>
               <p id="credentialCount">0 条</p>
             </div>
           </div>
@@ -89,14 +90,14 @@
           <div class="board-head tight">
             <div>
               <p class="panel-label">Key Editor</p>
-              <h2 id="formTitle">新增记录</h2>
+              <h2 id="formTitle">新增项目记录</h2>
             </div>
             <button id="clearFormBtn" class="plain-btn small" type="button">清空</button>
           </div>
           <form id="credentialForm" class="vault-form">
             <label class="field">
               <span>记录名称</span>
-              <input id="credentialTitleInput" class="field-input" name="title" placeholder="例如：云南项目-运营后台" required />
+              <input id="credentialTitleInput" class="field-input" name="title" placeholder="例如：云南项目 · 运营后台" required />
             </label>
             <label class="field">
               <span>登录账号</span>
@@ -114,7 +115,7 @@
               </label>
             </div>
             <label class="field">
-              <span>密钥/密码</span>
+              <span>密码/密钥</span>
               <div class="password-row">
                 <input id="credentialPasswordInput" class="field-input" name="password" type="password" placeholder="保存这个账号的密码或密钥" autocomplete="new-password" />
                 <button id="togglePasswordInputBtn" class="plain-btn small" type="button">显示</button>
@@ -138,7 +139,7 @@
               <span>标记为常用</span>
             </label>
             <div class="form-actions">
-              <button id="saveCredentialBtn" class="primary-btn" type="submit">保存密钥</button>
+              <button id="saveCredentialBtn" class="primary-btn" type="submit">保存凭证</button>
               <button id="deleteCredentialBtn" class="danger-btn hidden" type="button">删除记录</button>
             </div>
           </form>
@@ -172,6 +173,6 @@
       </footer>
     </main>
 
-    <script type="module" src="/src/vault.js"></script>
+    <script type="module" src="/src/pages/vault.js"></script>
   </body>
 </html>

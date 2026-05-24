@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>登录 - 汐航</title>
-    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/styles/styles.css?v=20260524-consent1" />
   </head>
   <body class="auth-page login-reference-page">
     <main id="login-page" class="reference-login">
@@ -21,8 +21,9 @@
             <button id="tab-dingtalk" class="tab-btn" type="button" data-login-tab="dingtalk">钉钉登录</button>
           </div>
 
+          <p id="errorText" class="error hidden"></p>
+
           <div id="password-panel" class="login-panel active">
-            <p id="errorText" class="error hidden"></p>
             <form id="passwordLoginForm" class="reference-form">
               <label class="form-group" for="usernameInput">
                 <span class="form-label">账号</span>
@@ -47,12 +48,38 @@
           </div>
 
           <div id="dingtalk-panel" class="login-panel">
-            <a id="loginBtn" class="reference-dingtalk" href="#">
-              <span class="qrcode-box">钉</span>
-              <strong>钉钉扫码登录</strong>
-              <small><span></span>等待钉钉授权</small>
-            </a>
-            <p class="reference-help">钉钉回调配置完成后，员工可以直接扫码进入工作台。</p>
+            <div class="dingtalk-panel-head">
+              <strong>钉钉官方扫码</strong>
+              <span>打开后自动刷新二维码，扫码确认后进入工作台。</span>
+            </div>
+            <div id="dingtalkQrBox" class="dingtalk-frame-card" title="点击刷新钉钉二维码">
+              <iframe id="dingtalkFrame" title="钉钉扫码登录" loading="eager" referrerpolicy="no-referrer-when-downgrade"></iframe>
+              <div id="dingtalkLoading" class="dingtalk-loading">
+                <span class="qrcode-box">钉</span>
+                <strong>正在加载钉钉扫码</strong>
+                <small id="dingtalkStatus">二维码过期后，点击二维码区域即可刷新。</small>
+              </div>
+            </div>
+            <div class="dingtalk-actions">
+              <button id="dingtalkRefreshBtn" class="reference-dingtalk-link" type="button">刷新二维码</button>
+              <a id="loginBtn" class="reference-dingtalk-link" href="#">新窗口打开</a>
+            </div>
+            <div id="dingtalkDebugPanel" class="dingtalk-debug-panel">
+              <div class="debug-head">
+                <strong>前端事件检测</strong>
+                <span id="debugVersion">等待脚本加载</span>
+              </div>
+              <div class="debug-grid">
+                <span>脚本</span>
+                <strong id="debugScriptState">未确认</strong>
+                <span>二维码</span>
+                <strong id="debugFrameState">未加载</strong>
+                <span>扫码消息</span>
+                <strong id="debugMessageState">未收到</strong>
+              </div>
+              <ol id="debugEventList" class="debug-event-list"></ol>
+            </div>
+            <p class="reference-help">扫码后会自动创建或匹配成员账号，并进入汐航工作台。</p>
           </div>
 
           <div id="copyright-text" class="reference-copy">© 2026 云南汐构信息技术有限公司</div>
@@ -109,6 +136,6 @@
 
       <footer id="version-info" class="reference-version">Version 0.1.0</footer>
     </main>
-    <script type="module" src="/src/login.js"></script>
+    <script type="module" src="/src/pages/login.js?v=20260524-consent1"></script>
   </body>
 </html>

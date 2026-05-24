@@ -1,4 +1,4 @@
-import { api, logout, redirectToLogin, requireUser } from './api.js';
+﻿import { api, logout, redirectToLogin, requireUser } from '../api.js';
 
 const editor = document.querySelector('#adminEditor');
 const saveBtn = document.querySelector('#saveBtn');
@@ -363,23 +363,23 @@ function renderGroups() {
   editor.innerHTML = '';
 
   if (groups.length === 0) {
-    editor.appendChild(el('div', 'empty-card', '站点矩阵还没有分组。点击“新增分组”，先搭一个入口星区。'));
+    editor.appendChild(el('div', 'empty-card', '站点矩阵还没有分组。点击“新增分组”，先搭一个入口分组。'));
     return;
   }
 
   groups.forEach((group, groupIndex) => {
     const groupCard = el('section', 'admin-card');
     const groupTop = el('div', 'admin-card-top');
-    const title = el('strong', '', `入口星区 ${groupIndex + 1}`);
+    const title = el('strong', '', `入口分组 ${groupIndex + 1}`);
     const actions = el('div', 'row-actions');
     const addSiteBtn = el('button', 'plain-btn small', '新增入口');
-    const removeGroupBtn = el('button', 'danger-btn small', '删除星区');
+    const removeGroupBtn = el('button', 'danger-btn small', '删除分组');
 
     addSiteBtn.type = 'button';
     removeGroupBtn.type = 'button';
     addSiteBtn.addEventListener('click', () => {
       group.sites = group.sites || [];
-      group.sites.push({ name: '', url: '', description: '', tags: [] });
+      group.sites.push({ name: '', url: '', description: '', tags: [], visibility: 'all', allowedRoles: [], allowedUserIds: [] });
       renderGroups();
     });
     removeGroupBtn.addEventListener('click', () => {
@@ -390,8 +390,8 @@ function renderGroups() {
     actions.append(addSiteBtn, removeGroupBtn);
     groupTop.append(title, actions);
     groupCard.appendChild(groupTop);
-    groupCard.appendChild(field('星区名称', input(group.name, '例如：产品与业务', (value) => (group.name = value))));
-    groupCard.appendChild(field('星区说明', textarea(group.description, '说明这里放哪些内部入口', (value) => (group.description = value))));
+    groupCard.appendChild(field('分组名称', input(group.name, '例如：产品与业务', (value) => (group.name = value))));
+    groupCard.appendChild(field('分组说明', textarea(group.description, '说明这里放哪些内部入口', (value) => (group.description = value))));
 
     const sites = el('div', 'site-editor-list');
     (group.sites || []).forEach((site, siteIndex) => {
@@ -421,6 +421,7 @@ function renderGroups() {
           })
         )
       );
+      siteCard.appendChild(renderSiteAccessEditor(site));
       sites.appendChild(siteCard);
     });
 
@@ -441,12 +442,85 @@ async function saveGroups() {
     groups = payload.groups;
     renderGroups();
     await Promise.all([refreshOverview(), refreshAuditLogs()]);
-    saveStatus.textContent = '已保存到 MySQL，成员刷新工作台即可看到新的入口星区。';
+    saveStatus.textContent = '已保存到 MySQL，成员刷新工作台即可看到新的入口分组。';
   } catch (error) {
     saveStatus.textContent = error.message;
   } finally {
     saveBtn.disabled = false;
   }
+}
+
+function renderSiteAccessEditor(site) {
+  site.visibility = normalizeSiteVisibility(site.visibility);
+  site.allowedRoles = normalizeSiteRoles(site.allowedRoles);
+  site.allowedUserIds = normalizeSiteUserIds(site.allowedUserIds);
+
+  const wrapper = el('div', 'site-access-panel');
+  const top = el('div', 'site-access-top');
+  const title = el('div', 'site-access-title');
+  title.append(el('strong', '', '可见范围'), el('span', '', '控制这个入口在工作台里对哪些成员展示'));
+
+  const visibilitySelect = el('select', 'field-input compact-input');
+  visibilitySelect.innerHTML = [
+    option('all', '所有成员', site.visibility),
+    option('admins', '仅管理员', site.visibility),
+    option('roles', '按角色', site.visibility),
+    option('users', '指定成员', site.visibility)
+  ].join('');
+  visibilitySelect.addEventListener('change', () => {
+    site.visibility = visibilitySelect.value;
+    if (site.visibility === 'roles' && site.allowedRoles.length === 0) {
+      site.allowedRoles = ['member'];
+    }
+    renderGroups();
+  });
+
+  top.append(title, visibilitySelect);
+  wrapper.appendChild(top);
+
+  if (site.visibility === 'roles') {
+    const roleList = el('div', 'site-access-checks');
+    [
+      ['member', '普通成员'],
+      ['admin', '管理员']
+    ].forEach(([value, label]) => {
+      const checkboxLabel = el('label', 'access-check');
+      const checkbox = el('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = site.allowedRoles.includes(value);
+      checkbox.addEventListener('change', () => {
+        site.allowedRoles = toggleListValue(site.allowedRoles, value, checkbox.checked);
+      });
+      checkboxLabel.append(checkbox, el('span', '', label));
+      roleList.appendChild(checkboxLabel);
+    });
+    wrapper.appendChild(roleList);
+  }
+
+  if (site.visibility === 'users') {
+    const memberList = el('div', 'site-member-grid');
+    const selectableUsers = users.filter((user) => user.status !== 'disabled');
+
+    if (selectableUsers.length === 0) {
+      memberList.appendChild(el('span', 'site-access-empty', '暂无可分配成员'));
+    }
+
+    selectableUsers.forEach((user) => {
+      const userId = Number(user.id);
+      const checkboxLabel = el('label', 'access-check member-check');
+      const checkbox = el('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = site.allowedUserIds.includes(userId);
+      checkbox.addEventListener('change', () => {
+        site.allowedUserIds = toggleListValue(site.allowedUserIds, userId, checkbox.checked);
+      });
+      checkboxLabel.append(checkbox, el('span', '', userDisplayName(user)));
+      memberList.appendChild(checkboxLabel);
+    });
+    wrapper.appendChild(memberList);
+  }
+
+  return wrapper;
 }
 
 function fillSettingsForm() {
@@ -562,6 +636,44 @@ function countSites(siteGroups) {
   return siteGroups.reduce((total, group) => total + (group.sites || []).length, 0);
 }
 
+function normalizeSiteVisibility(value) {
+  return ['all', 'admins', 'roles', 'users'].includes(value) ? value : 'all';
+}
+
+function normalizeSiteRoles(value) {
+  return [
+    ...new Set(
+      (Array.isArray(value) ? value : String(value || '').split(/[,，]/))
+        .map((item) => String(item || '').trim())
+        .filter((item) => item === 'admin' || item === 'member')
+    )
+  ];
+}
+
+function normalizeSiteUserIds(value) {
+  return [
+    ...new Set(
+      (Array.isArray(value) ? value : String(value || '').split(/[,，]/))
+        .map((item) => Number(item))
+        .filter((item) => Number.isSafeInteger(item) && item > 0)
+    )
+  ];
+}
+
+function toggleListValue(list, value, enabled) {
+  const next = new Set(list || []);
+  if (enabled) {
+    next.add(value);
+  } else {
+    next.delete(value);
+  }
+  return [...next];
+}
+
+function userDisplayName(user) {
+  return `${user.nick || user.username} (${user.username})`;
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) {
@@ -626,3 +738,4 @@ function escapeHtml(value = '') {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 }
+

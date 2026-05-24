@@ -1,4 +1,4 @@
-import { api, logout, redirectToLogin, requireUser } from './api.js';
+﻿import { api, logout, redirectToLogin, requireUser } from '../api.js';
 
 const userName = document.querySelector('#userName');
 const logoutBtn = document.querySelector('#logoutBtn');
@@ -606,3 +606,4 @@ function formatDate(value) {
     minute: '2-digit'
   }).format(date);
 }
+

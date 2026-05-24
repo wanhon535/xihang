@@ -1,215 +1,332 @@
 # 汐航
 
-汐航是一个前后端分离的团队入口与轻量 SSO 导航平台：前端使用 Vite，后端使用 Express REST API，数据存储在 MySQL，支持账号密码登录、钉钉扫码登录、后台配置导航和后续接入单点登录跳转。
+汐航是面向公司内部的统一登录、系统入口和个人凭证管理平台。项目采用前后端分离结构：前端由 Vite 承载页面和交互，后端由 Express 提供 REST API，业务数据存储在 MySQL。
 
-## 技术结构
+当前版本重点能力：
+
+- 账号密码登录和钉钉扫码登录。
+- 管理员创建成员账号，不开放自助注册。
+- 管理员创建或重置的本地账号首次登录必须修改密码。
+- 按用户、角色和管理员身份隔离站点入口。
+- 内嵌个人「星钥库」，用于保存项目、系统、网址/IP、账号和密码。
+- 工作台支持个人主题、渐变背景和背景图片上传。
+- 预留 SSO ticket 流程，便于已登录汐航后跳转到其他内部系统。
+- 后台提供用户管理、站点管理、系统设置、审计日志和备份导出。
+
+完整运维手册见 [XIHANG_OPERATION_MANUAL.md](./docs/XIHANG_OPERATION_MANUAL.md)。
+
+## 技术栈
 
 ```text
-backend/              Express API、登录鉴权、MySQL 数据访问
-frontend/             Vite 前端页面：首页、登录页、星钥库页、后台管理页
-data/sites.json       首次初始化 MySQL 时的种子数据
-sql/tidesail.sql      MySQL 建库建表和示例数据脚本
+Frontend   Vite + 原生 ES Module
+Backend    Node.js + Express
+Database   MySQL
+Session    express-session + MySQL app_sessions
+Crypto     bcryptjs + AES-256-GCM
+SSO        DingTalk OAuth2 + internal one-time ticket
 ```
 
-## 本地启动
+建议环境：
 
-1. 安装依赖：
+- Node.js 20 LTS 或更高版本。
+- MySQL 8.x 或兼容版本。
+- Windows PowerShell、CMD、Linux shell 均可运行；本文命令以 PowerShell 为主。
 
-```bash
+## 目录结构
+
+```text
+backend/src/                       后端 API、登录鉴权、SSO、MySQL 数据访问
+backend/routes/                    后续路由拆分目录，当前预留
+backend/controllers/               后续控制器拆分目录，当前预留
+backend/middlewares/               后续中间件拆分目录，当前预留
+backend/utils/                     后续工具模块拆分目录，当前预留
+backend/config/                    后续环境配置拆分目录，当前预留
+frontend/*.html                    Vite 多页面 HTML 入口
+frontend/src/api.js                前端统一 API 封装
+frontend/src/config.js             前端 API 地址配置
+frontend/src/pages/                登录、工作台、星钥库、后台等页面脚本
+frontend/src/styles/styles.css     全局样式
+docs/XIHANG_OPERATION_MANUAL.md    运维和钉钉配置手册
+docs/CLEANUP_PLAN.md               清理计划和恢复说明
+docs/REFACTOR_STEPS.md             分阶段重构建议
+data/sites.json                    首次启动时的导航种子数据
+data/dingtalk-events.ndjson        钉钉扫码和回调事件日志
+data/uploads/                      用户上传的工作台背景图，默认不提交 Git
+sql/tidesail.sql                   建库建表和示例数据脚本
+scripts/user-scenario-smoke.mjs    用户场景自检脚本
+scripts/admin-module-smoke.mjs     管理后台自检脚本
+scripts/verify-after-refactor.mjs  重构后轻量烟雾测试脚本
+```
+
+## 快速启动
+
+安装依赖：
+
+```powershell
 npm install
 ```
 
-2. 复制配置：
+复制配置：
 
-```bash
-copy .env.example .env
+```powershell
+Copy-Item .env.example .env
 ```
 
-3. 创建或准备 MySQL，并编辑 `.env`：
+编辑 `.env`，至少确认这些配置：
 
 ```ini
+PORT=2222
+FRONTEND_ORIGIN=http://127.0.0.1:2223,http://localhost:2223
+SESSION_SECRET=replace-with-a-long-random-secret
+VAULT_ENCRYPTION_KEY=replace-with-another-long-random-secret
+
 MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_USER=root
 MYSQL_PASSWORD=your-password
 MYSQL_DATABASE=tidesail
-```
 
-后端启动时会自动创建数据库和表：
-
-```text
-users
-nav_groups
-nav_sites
-sso_tickets
-personal_credentials
-```
-
-如果 `nav_groups` 为空，会自动把 `data/sites.json` 导入 MySQL 作为初始导航数据。
-
-也可以手动导入 SQL 文件初始化数据库：
-
-```bash
-mysql -h localhost -P 3309 -u root -p < sql/tidesail.sql
-```
-
-`sql/tidesail.sql` 包含 `CREATE DATABASE IF NOT EXISTS`、建表语句和示例数据；脚本会先删除内置示例分组再插入，可重复导入。
-
-4. 配置登录与前端地址：
-
-```ini
-SESSION_SECRET=replace-with-a-long-random-secret
-VAULT_ENCRYPTION_KEY=replace-with-another-long-random-secret
-FRONTEND_ORIGIN=http://127.0.0.1:2223,http://localhost:2223
 LOCAL_ADMIN_USERNAME=admin
 LOCAL_ADMIN_PASSWORD=admin123456
 ```
 
-后端启动时会把本地管理员账号同步到 `users` 表，并以 `bcrypt` 哈希保存密码。上线前必须修改默认密码。
-`VAULT_ENCRYPTION_KEY` 用于加密个人密码库中的密码字段，上线后必须固定保存；更换该值会导致历史记录无法解密。
-
-5. 可选配置钉钉扫码登录：
-
-```ini
-DINGTALK_APP_ID=dingxxxxxxxxxxxx
-DINGTALK_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-DINGTALK_REDIRECT_URI=http://127.0.0.1:2222/api/auth/dingtalk/callback
-```
-
-6. 启动前后端：
+启动后端：
 
 ```powershell
 npm.cmd run dev:backend
+```
+
+再开一个新窗口启动前端：
+
+```powershell
 npm.cmd run dev:frontend
 ```
 
-前端地址：
+访问地址：
 
 ```text
-http://127.0.0.1:2223
+前端：http://127.0.0.1:2223
+后端：http://127.0.0.1:2222
+登录页：http://127.0.0.1:2223/login.html
+后台：http://127.0.0.1:2223/admin.html
+星钥库：http://127.0.0.1:2223/vault.html
 ```
 
-后端 API：
+也可以用一个命令同时启动前后端：
+
+```powershell
+npm.cmd run dev
+```
+
+本地调试时更推荐分两个窗口启动，后端报错和前端构建日志更容易看清楚。
+
+## 数据库初始化
+
+后端启动时会自动创建数据库表，并对旧表补齐新增字段。MySQL 账号需要具备创建表、修改表和读写数据的权限。
+
+当前核心表：
 
 ```text
-http://127.0.0.1:2222
+users                  用户、角色、状态、钉钉身份、本地密码哈希
+nav_groups             站点分组
+nav_sites              站点入口、可见范围、角色/成员授权
+sso_tickets            一次性 SSO 票据
+personal_credentials   个人星钥库记录
+system_settings        系统设置
+admin_audit_logs       管理操作审计日志
+user_preferences       用户工作台外观配置
+app_sessions           登录 session
 ```
 
-## 登录方式
+如果 `nav_groups` 为空，后端会自动导入 `data/sites.json` 作为初始导航数据。
 
-汐航支持两种登录方式：
+也可以手动导入 SQL：
 
-1. 账号密码登录：读取 `users.username` 和 `users.password_hash`。
-2. 钉钉扫码登录：作为可选统一登录入口。
+```powershell
+mysql -h 127.0.0.1 -P 3306 -u root -p < sql/tidesail.sql
+```
 
-钉钉扫码登录成功后，会自动创建或更新 `users` 记录，保存 `nick`、`unionid`、`openid`、`role` 和 `last_login_at`。
+`sql/tidesail.sql` 包含 `CREATE DATABASE IF NOT EXISTS`、建表语句和示例站点数据。
 
-钉钉不会向第三方应用返回用户真实密码，因此系统不会、也不能保存钉钉密码。扫码用户的 `password_hash` 会写入随机密码哈希，用于满足用户表字段约束；如果后续要允许该用户账号密码登录，应单独提供“重置密码/设置密码”功能。
+## 默认账号
 
-## 钉钉配置要点
-
-1. 进入钉钉开放平台，创建扫码登录/网页登录应用。
-2. 获取应用的 `App ID` 和 `App Secret`，填入 `.env`。
-3. 回调地址配置为 `.env` 中的 `DINGTALK_REDIRECT_URI`。
-4. 本地回调地址是 `http://127.0.0.1:2222/api/auth/dingtalk/callback`。
-5. 线上部署时，回调地址必须改为公网 HTTPS 地址，例如 `https://api.xihang.example.com/api/auth/dingtalk/callback`。
-
-## 访问控制
-
-默认只要登录成功即可访问汐航。
-
-如需限制只有指定钉钉成员能扫码访问，可以配置：
+本地管理员由 `.env` 控制：
 
 ```ini
-ALLOWED_DINGTALK_UNION_IDS=unionid1,unionid2,unionid3
+LOCAL_ADMIN_USERNAME=admin
+LOCAL_ADMIN_PASSWORD=admin123456
 ```
 
-管理员识别推荐使用 `unionId`：
+后端每次启动都会把这个账号同步为管理员，并更新为 `.env` 里的密码。生产环境必须修改默认密码，并妥善保存 `.env`。
+
+管理员在后台创建的普通成员账号会被标记为 `must_change_password=1`，成员首次密码登录后会被强制跳转到改密码页面。
+
+## 用户和权限模型
+
+汐航不提供公开注册入口。账号来源只有两类：
+
+- 管理员在后台创建的本地账号。
+- 钉钉扫码登录后自动创建或匹配的成员账号。
+
+用户角色：
+
+```text
+admin   管理员，可进入后台管理用户、站点和系统设置
+member  普通成员，只能访问被授权的站点和自己的星钥库
+```
+
+用户状态：
+
+```text
+active    可登录
+disabled  禁用后不可登录
+```
+
+站点入口支持四种可见范围：
+
+```text
+所有成员
+仅管理员
+按角色
+指定成员
+```
+
+后端会在 `/api/nav/groups` 和 `/api/sso/authorize` 同时做权限过滤，普通成员即使直接请求接口也不能访问未授权入口。
+
+## 钉钉扫码登录
+
+`.env` 示例：
 
 ```ini
-ADMIN_DINGTALK_UNION_IDS=unionid1,unionid2
+DINGTALK_CLIENT_ID=dingxxxxxxxxxxxx
+DINGTALK_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+DINGTALK_OAUTH_SCOPE=openid corpid Contact.User.Read
+DINGTALK_OAUTH_PROMPT=consent
+DINGTALK_CORP_ID=dingxxxxxxxxxxxxxxxx
+DINGTALK_REDIRECT_URI=https://your-public-domain.example.com/api/auth/dingtalk/callback
+DINGTALK_FORCE_IPV4=true
 ```
 
-也可以用钉钉昵称临时识别，默认昵称 `admin` 是管理员：
+钉钉后台需要确认：
 
-```ini
-ADMIN_DINGTALK_NICKS=admin,张三
+- 回调地址必须和 `DINGTALK_REDIRECT_URI` 完全一致。
+- 本地调试如果钉钉要求公网 HTTPS，需要使用内网穿透地址。
+- 登录 scope 使用 `openid corpid Contact.User.Read`。
+- 保持 `DINGTALK_OAUTH_PROMPT=consent`，让员工重新确认授权，避免复用旧的未授权令牌。
+- 应用权限需要包含 `Contact.User.Read` 或通讯录个人信息读权限。
+- 通讯录接口权限范围必须包含要登录的员工。
+- “应用可见范围/全员可见”和“通讯录接口权限范围”不是同一个设置。
+- 如果开启 IP 白名单，以钉钉错误信息里的 `request ip=...` 为准加入白名单。
+
+检查当前后端生成的钉钉登录 URL：
+
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:2222/api/auth/dingtalk/url -Headers @{ Origin='http://127.0.0.1:2223' } | ConvertTo-Json -Depth 10
 ```
 
-## 后台管理
+正常结果里应能看到：
 
-管理员登录后可以访问：
+```text
+configured: true
+scope: openid corpid Contact.User.Read
+prompt: consent
+redirect_uri: 当前钉钉后台配置的回调地址
+```
+
+扫码事件会写入：
+
+```text
+data/dingtalk-events.ndjson
+```
+
+实时查看：
+
+```powershell
+Get-Content -Encoding UTF8 -Wait -Tail 80 data\dingtalk-events.ndjson
+```
+
+如果仍然出现 `Forbidden.AccessDenied.AccessTokenPermissionDenied`，而日志里的授权 URL 已经包含 `Contact.User.Read` 和 `prompt=consent`，说明登录链路已经把权限请求发出去了，需要继续检查钉钉开放平台里的委托权限、通讯录接口权限范围和员工覆盖范围。
+
+## 星钥库
+
+星钥库是汐航内嵌的个人凭证管理模块，用于记录项目、系统、网址/IP、账号、密码、标签和备注。
+
+当前支持：
+
+- 新增、编辑、删除个人凭证。
+- 搜索项目、账号、网址/IP、标签和备注。
+- 收藏常用记录。
+- 打开登录地址。
+- 复制账号和密码。
+- 显示密码前单独请求明文。
+- 密码强度提示和密码生成器。
+
+隔离和安全策略：
+
+- 每条记录绑定当前登录用户的 `users.id`。
+- 后端接口只读取和修改当前登录用户自己的记录。
+- 后台管理不会返回其他用户的星钥库明文。
+- 密码字段使用 AES-256-GCM 加密后存入 MySQL。
+- `VAULT_ENCRYPTION_KEY` 上线后必须固定保存；更换后历史密码无法解密。
+
+## 工作台外观
+
+每个用户可以独立保存工作台外观：
+
+- 纯色背景。
+- 渐变背景。
+- 自定义背景图上传。
+- 个人偏好存储在 `user_preferences`。
+- 上传文件存储在 `data/uploads/backgrounds`，默认已加入 `.gitignore`。
+
+工作台外观按用户隔离，互不影响。
+
+## 管理后台
+
+管理员入口：
 
 ```text
 http://127.0.0.1:2223/admin.html
 ```
 
-后台支持：
+管理后台当前包含：
 
-1. 新增、删除导航分组。
-2. 新增、删除站点。
-3. 修改站点名称、访问地址、说明、标签。
-4. 保存后写入 MySQL，团队成员刷新首页即可看到最新配置。
+- 总览数据。
+- 用户管理：创建用户、修改角色、启用/禁用、重置密码、删除用户。
+- 站点管理：创建分组、配置入口、标签、说明和可见范围。
+- 系统设置：产品名称、公司名称、前端地址、密码长度、会话时长、SSO 票据有效期、是否强制钉钉登录等。
+- 审计日志：记录用户、站点、设置等关键管理操作。
+- 备份导出：导出当前分组、用户摘要、系统设置和概览数据。
 
-站点配置只允许管理员操作：前端仅管理员显示后台入口；后端 `/api/admin/groups` 读取和保存接口同时校验登录态与管理员权限，普通成员直接请求也会返回 403。
+安全约束：
 
-如果还没配置真实钉钉应用，可以先用账号密码登录后台。默认账号是 `admin`，默认密码是 `.env` 中的 `LOCAL_ADMIN_PASSWORD`。
+- 普通成员访问后台 API 会返回 403。
+- 管理员不能禁用、删除或降级自己当前登录的账号。
+- 重置密码后的账号会再次进入首次改密流程。
 
-## 星钥库
+## SSO 票据流程
 
-登录后可以访问：
+汐航已预留从统一工作台跳转到其他内部系统的 SSO ticket 能力。
 
-```text
-http://127.0.0.1:2223/vault.html
-```
+跳转流程：
 
-星钥库是内嵌在汐航 SSO 平台里的独立功能模块，用于记录某个系统、平台或服务的登录账号和密码，方便个人后续检索。它支持新增、编辑、删除、搜索、分类、标签、收藏、密码强度提示、密码生成器、打开登录地址、显示密码、复制账号和复制密码。
-
-权限隔离按当前登录用户实现：每条记录都绑定当前登录用户的 `users.id`，后端接口只按登录态读取和修改本人记录；现有后台管理接口不会读取其他人的星钥库。密码字段使用 AES-256-GCM 加密后写入 MySQL，列表接口不会返回明文密码，只有用户点击显示或复制密码时才会请求明文。
-
-## API 概览
-
-```text
-GET  /api/health
-GET  /api/auth/me
-GET  /api/auth/dingtalk
-GET  /api/auth/dingtalk/callback
-POST /api/auth/password-login
-POST /api/auth/logout
-GET  /api/nav/groups
-GET  /api/vault/credentials
-POST /api/vault/credentials
-PUT  /api/vault/credentials/:id
-DELETE /api/vault/credentials/:id
-GET  /api/vault/credentials/:id/secret
-GET  /api/sso/authorize?redirect=https://target.example.com
-POST /api/sso/verify
-GET  /api/admin/groups
-PUT  /api/admin/groups
-```
-
-## 单点登录预留
-
-当前已预留汐航到其他系统的 SSO 跳转能力，用于实现“用户已登录汐航，点击其他平台不再重复登录”。
-
-流程如下：
-
-1. 用户在汐航完成登录。
-2. 用户点击某个站点卡片。
-3. 前端不会直接打开原始地址，而是跳到后端：
+1. 用户登录汐航。
+2. 用户点击一个站点入口。
+3. 前端打开：
 
 ```text
-GET /api/sso/authorize?redirect=https://target.example.com
+GET /api/sso/authorize?siteId=123
 ```
 
-4. 后端校验当前汐航会话，签发一个短期一次性 `sso_ticket`。
-5. 后端重定向到目标系统：
+4. 后端校验登录态和站点可见权限。
+5. 后端生成短期一次性 `sso_ticket`。
+6. 后端重定向到目标系统：
 
 ```text
 https://target.example.com?sso_ticket=xxxxxxxx
 ```
 
-6. 目标系统收到 `sso_ticket` 后，服务端调用汐航后端校验：
+7. 目标系统服务端调用汐航校验：
 
 ```http
 POST /api/sso/verify
@@ -220,41 +337,225 @@ Content-Type: application/json
 }
 ```
 
-7. 校验成功后返回用户身份：
+成功返回：
 
 ```json
 {
   "ok": true,
   "targetUrl": "https://target.example.com",
   "user": {
+    "id": 1,
+    "username": "zhangsan",
     "nick": "张三",
+    "role": "member",
     "unionid": "ding-unionid",
     "openid": "ding-openid"
   },
-  "expiresAt": "2026-05-13T10:00:00.000Z"
+  "expiresAt": "2026-05-24T10:00:00.000Z"
 }
 ```
 
-8. 目标系统据此创建自己的登录态，后续用户在目标系统内访问就不再需要登录。
+说明：
 
-注意事项：
+- `sso_ticket` 默认有效期为 120 秒，可通过 `SSO_TICKET_TTL_SECONDS` 或后台设置调整。
+- `sso_ticket` 校验成功后立即失效，不能重复使用。
+- `/api/sso/authorize` 会按当前用户可见站点校验，不允许跳转到未授权地址。
 
-1. `sso_ticket` 默认有效期为 120 秒，可通过 `SSO_TICKET_TTL_SECONDS` 配置。
-2. `sso_ticket` 是一次性的，校验成功后立即失效。
-3. 后续如果接入多个正式业务系统，建议增加目标系统白名单，避免任意 `redirect` 被滥用。
-4. 如果目标系统和汐航在同一主域下，也可以进一步升级为统一 Cookie 域名方案。
+## 常用 API
+
+```text
+GET    /api/health
+GET    /api/auth/me
+POST   /api/auth/password-login
+POST   /api/auth/change-password
+POST   /api/auth/logout
+
+GET    /api/auth/dingtalk
+GET    /api/auth/dingtalk/url
+GET    /api/auth/dingtalk/callback
+POST   /api/auth/handoff-login
+POST   /api/auth/dingtalk/client-log
+
+GET    /api/nav/groups
+GET    /api/user/workspace-theme
+PUT    /api/user/workspace-theme
+POST   /api/user/workspace-theme/background
+
+GET    /api/vault/credentials
+POST   /api/vault/credentials
+PUT    /api/vault/credentials/:id
+DELETE /api/vault/credentials/:id
+GET    /api/vault/credentials/:id/secret
+
+GET    /api/sso/authorize
+POST   /api/sso/verify
+
+GET    /api/admin/overview
+GET    /api/admin/users
+POST   /api/admin/users
+PUT    /api/admin/users/:id
+DELETE /api/admin/users/:id
+POST   /api/admin/users/:id/reset-password
+GET    /api/admin/groups
+PUT    /api/admin/groups
+GET    /api/admin/settings
+PUT    /api/admin/settings
+GET    /api/admin/audit-logs
+GET    /api/admin/backup
+```
+
+## 常用命令
+
+```powershell
+npm.cmd run dev:backend
+npm.cmd run dev:frontend
+npm.cmd run dev
+npm.cmd run check
+npm.cmd run build:frontend
+npm.cmd run test:user-scenarios
+npm.cmd start
+```
+
+命令说明：
+
+```text
+dev:backend          使用 node --watch 启动后端，默认端口 2222
+dev:frontend         启动 Vite 前端，默认端口 2223
+dev                  同时启动前后端
+check                检查后端语法
+build:frontend       构建前端到 dist
+test:user-scenarios  跑用户场景和后台模块自检
+start                启动后端生产进程
+```
+
+## 端口和前后端分离
+
+默认端口：
+
+```text
+后端 PORT=2222
+前端 Vite=2223
+```
+
+如果要换后端端口：
+
+- 修改 `.env` 的 `PORT`。
+- 修改 `.env` 的 `FRONTEND_ORIGIN`。
+- 修改钉钉后台回调地址和 `.env` 的 `DINGTALK_REDIRECT_URI`。
+- 前端默认会请求当前主机的 `2222`，生产或改端口时建议设置 `VITE_API_BASE_URL`。
+
+本地临时指定前端 API 地址：
+
+```powershell
+$env:VITE_API_BASE_URL='http://127.0.0.1:2222'
+npm.cmd run dev:frontend
+```
+
+如果只想换前端端口，可以直接运行：
+
+```powershell
+npx vite --host 127.0.0.1 --port 2224 --strictPort
+```
+
+同时要把 `.env` 的 `FRONTEND_ORIGIN` 加上新前端地址。
 
 ## 生产部署建议
 
-1. 前端用 `VITE_API_BASE_URL=https://api.xihang.example.com npm run dev:frontend` 本地调试，正式环境使用 `npm run build:frontend` 后部署 `dist` 静态资源。
-2. 后端使用 `NODE_ENV=production npm start` 启动。
-3. 配置 HTTPS，确保钉钉回调地址与 `.env` 完全一致。
-4. 设置足够长且随机的 `SESSION_SECRET`。
-5. 多实例部署时，建议把 `express-session` 的默认内存存储替换成 Redis。
+后端：
 
-## 推送远程仓库前检查
+```powershell
+$env:NODE_ENV='production'
+npm.cmd start
+```
 
-1. 不要提交 `.env`，里面包含 MySQL 密码、钉钉 App Secret 等敏感信息。
-2. 不要提交 `node_modules/`、`dist/`、`.backend-*.log`、`.frontend-*.log` 等运行或构建产物。
-3. 需要提交 `package.json`、`package-lock.json`、`backend/`、`frontend/`、`data/sites.json`、`sql/tidesail.sql`、`.env.example`、`README.md`。
-4. 推送前建议执行 `npm run check` 和 `npm run build:frontend`。
+前端：
+
+```powershell
+$env:VITE_API_BASE_URL='https://api.xihang.example.com'
+npm.cmd run build:frontend
+```
+
+部署要求：
+
+- 后端使用 HTTPS，钉钉回调地址必须和 `.env` 完全一致。
+- 前端静态资源部署 `dist`。
+- 生产环境改掉默认管理员密码。
+- `SESSION_SECRET` 使用足够长的随机值。
+- `VAULT_ENCRYPTION_KEY` 单独保存，不能丢失或随意更换。
+- `.env` 不提交 Git。
+- 多实例部署时当前 session 可共用 MySQL；流量更大时再考虑 Redis。
+
+## 排查手册
+
+后端是否正常：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:2222/api/health
+```
+
+前端打不开：
+
+- 确认 `npm.cmd run dev:frontend` 正在运行。
+- 确认端口 `2223` 没被其他进程占用。
+- 确认浏览器访问的是 `http://127.0.0.1:2223`。
+
+密码登录后不跳转：
+
+- 调用 `/api/auth/me` 看是否已有用户态。
+- 如果 `mustChangePassword=true`，会跳转到 `/change-password.html`。
+- 如果后台开启了强制钉钉登录，普通成员不能使用密码登录，管理员不受影响。
+
+钉钉二维码不显示：
+
+- 先请求 `/api/auth/dingtalk/url` 看 `configured` 是否为 `true`。
+- 检查 `DINGTALK_CLIENT_ID`、`DINGTALK_CLIENT_SECRET` 和 `DINGTALK_REDIRECT_URI`。
+- 浏览器强刷登录页：`http://127.0.0.1:2223/login.html?tab=dingtalk&v=manual-check`。
+
+扫码后不跳转：
+
+- 查看 `data/dingtalk-events.ndjson` 是否出现 `callback.received`。
+- 如果没有回调，检查钉钉后台回调地址和内网穿透地址。
+- 如果有 `callback.success` 但前端不跳，查看登录页的“前端事件检测”。
+- 如果出现 `invalid_state_or_missing_code`，刷新登录页重新扫码。
+
+钉钉权限错误：
+
+- 确认 URL 有 `scope=openid corpid Contact.User.Read`。
+- 确认 URL 有 `prompt=consent`。
+- 确认员工手机端同意授权。
+- 确认钉钉后台通讯录接口权限范围包含该员工。
+- 确认 IP 白名单包含当前后端出口 IP。
+
+## 提交前检查
+
+```powershell
+npm.cmd run check
+npm.cmd run build:frontend
+npm.cmd run test:user-scenarios
+```
+
+不要提交：
+
+```text
+.env
+node_modules/
+dist/
+data/uploads/
+.backend-*.log
+.frontend-*.log
+```
+
+需要提交：
+
+```text
+package.json
+package-lock.json
+backend/
+frontend/
+data/sites.json
+sql/tidesail.sql
+.env.example
+README.md
+docs/XIHANG_OPERATION_MANUAL.md
+scripts/
+```

@@ -41,6 +41,16 @@ const SYSTEM_SETTING_LABELS = {
   backupRetentionDays: '备份保留天数'
 };
 
+const DEFAULT_WORKSPACE_THEME = {
+  mode: 'gradient',
+  solidColor: '#08090a',
+  gradientStart: '#08090a',
+  gradientEnd: '#0f2f2b',
+  gradientAngle: 135,
+  imageUrl: '',
+  overlay: 28
+};
+
 export function getPool() {
   if (!pool) {
     pool = mysql.createPool({
@@ -81,6 +91,8 @@ export async function initDatabase() {
       nick VARCHAR(160) NOT NULL DEFAULT '',
       unionid VARCHAR(128) NULL,
       openid VARCHAR(128) NULL,
+      dingtalk_userid VARCHAR(128) NULL,
+      dingtalk_corp_id VARCHAR(128) NULL,
       role VARCHAR(32) NOT NULL DEFAULT 'member',
       status VARCHAR(32) NOT NULL DEFAULT 'active',
       must_change_password TINYINT(1) NOT NULL DEFAULT 0,
@@ -91,6 +103,7 @@ export async function initDatabase() {
       PRIMARY KEY (id),
       UNIQUE KEY uk_users_username (username),
       UNIQUE KEY uk_users_unionid (unionid),
+      UNIQUE KEY uk_users_dingtalk_userid (dingtalk_corp_id, dingtalk_userid),
       KEY idx_users_role (role),
       KEY idx_users_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -116,6 +129,9 @@ export async function initDatabase() {
       url VARCHAR(1000) NOT NULL,
       description VARCHAR(500) NOT NULL DEFAULT '',
       tags TEXT NULL,
+      visibility VARCHAR(32) NOT NULL DEFAULT 'all',
+      allowed_roles TEXT NULL,
+      allowed_user_ids TEXT NULL,
       sort_order INT NOT NULL DEFAULT 0,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -198,8 +214,32 @@ export async function initDatabase() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id BIGINT UNSIGNED NOT NULL,
+      workspace_theme TEXT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id),
+      CONSTRAINT fk_user_preferences_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS app_sessions (
+      sid VARCHAR(128) NOT NULL,
+      session_data MEDIUMTEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (sid),
+      KEY idx_app_sessions_expires (expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
   await ensureUserColumns(db);
   await ensurePersonalCredentialColumns(db);
+  await ensureNavSitePermissionColumns(db);
   await ensureSystemSettings();
 
   const [[{ count }]] = await db.query('SELECT COUNT(*) AS count FROM nav_groups');
@@ -210,11 +250,15 @@ export async function initDatabase() {
   await ensureLocalAdminUser();
 }
 
-export async function getSiteGroups() {
+export async function getSiteGroups(options = {}) {
+  const { user = null, includePermissions = false, hideEmptyGroups = false } = options || {};
   const db = getPool();
   const [groups] = await db.query('SELECT id, name, description FROM nav_groups ORDER BY sort_order ASC, id ASC');
   const [sites] = await db.query(
-    'SELECT id, group_id AS groupId, name, url, description, tags FROM nav_sites ORDER BY sort_order ASC, id ASC'
+    `SELECT id, group_id AS groupId, name, url, description, tags, visibility,
+       allowed_roles AS allowedRoles, allowed_user_ids AS allowedUserIds
+     FROM nav_sites
+     ORDER BY sort_order ASC, id ASC`
   );
 
   const byGroup = new Map();
@@ -225,16 +269,19 @@ export async function getSiteGroups() {
       return;
     }
 
-    group.sites.push({
-      id: site.id,
-      name: site.name,
-      url: site.url,
-      description: site.description,
-      tags: parseTags(site.tags)
-    });
+    if (user && !isSiteVisibleToUser(site, user)) {
+      return;
+    }
+
+    group.sites.push(mapSite(site, includePermissions));
   });
 
-  return [...byGroup.values()];
+  const result = [...byGroup.values()];
+  return hideEmptyGroups ? result.filter((group) => group.sites.length > 0) : result;
+}
+
+export async function getSiteGroupsForUser(user) {
+  return getSiteGroups({ user, hideEmptyGroups: true });
 }
 
 export async function replaceSiteGroups(value) {
@@ -255,14 +302,26 @@ export async function replaceSiteGroups(value) {
 
       for (const [siteIndex, site] of group.sites.entries()) {
         await connection.query(
-          'INSERT INTO nav_sites (group_id, name, url, description, tags, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
-          [result.insertId, site.name, site.url, site.description, JSON.stringify(site.tags), siteIndex]
+          `INSERT INTO nav_sites
+             (group_id, name, url, description, tags, visibility, allowed_roles, allowed_user_ids, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            result.insertId,
+            site.name,
+            site.url,
+            site.description,
+            JSON.stringify(site.tags),
+            site.visibility,
+            JSON.stringify(site.allowedRoles),
+            JSON.stringify(site.allowedUserIds),
+            siteIndex
+          ]
         );
       }
     }
 
     await connection.commit();
-    return getSiteGroups();
+    return getSiteGroups({ includePermissions: true });
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -572,6 +631,36 @@ export async function getAdminOverview() {
   };
 }
 
+export async function getUserWorkspaceTheme(userId) {
+  const db = getPool();
+  const [rows] = await db.query('SELECT workspace_theme AS workspaceTheme FROM user_preferences WHERE user_id = ? LIMIT 1', [
+    userId
+  ]);
+
+  if (!rows[0]?.workspaceTheme) {
+    return { ...DEFAULT_WORKSPACE_THEME };
+  }
+
+  try {
+    return normalizeWorkspaceTheme(JSON.parse(rows[0].workspaceTheme));
+  } catch {
+    return { ...DEFAULT_WORKSPACE_THEME };
+  }
+}
+
+export async function updateUserWorkspaceTheme(userId, value) {
+  const theme = normalizeWorkspaceTheme(value);
+  const db = getPool();
+  await db.query(
+    `INSERT INTO user_preferences (user_id, workspace_theme)
+     VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE workspace_theme = VALUES(workspace_theme)`,
+    [userId, JSON.stringify(theme)]
+  );
+
+  return theme;
+}
+
 export async function listSystemSettings() {
   const db = getPool();
   const [rows] = await db.query(
@@ -654,7 +743,7 @@ export async function recordAuditLog({ actor, action, targetType = '', targetId 
 
 export async function createAdminBackupSnapshot() {
   const [groups, users, settings, overview] = await Promise.all([
-    getSiteGroups(),
+    getSiteGroups({ includePermissions: true }),
     listUsers(),
     listSystemSettings(),
     getAdminOverview()
@@ -731,26 +820,54 @@ export async function upsertDingTalkUser(user, role = 'member') {
   const password = createRandomPassword();
   const passwordHash = await bcrypt.hash(password, 10);
   const db = getPool();
+  const dingTalkUserId = user.userid || user.userId || user.dingtalkUserId || '';
+  const dingTalkCorpId = user.corpId || user.corp_id || '';
 
   await db.query(
-    `INSERT INTO users (username, password_hash, nick, unionid, openid, role, status, must_change_password, last_login_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'active', 0, NOW())
+    `INSERT INTO users
+       (username, password_hash, nick, unionid, openid, dingtalk_userid, dingtalk_corp_id, role, status, must_change_password, last_login_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, NOW())
      ON DUPLICATE KEY UPDATE
        nick = VALUES(nick),
-       openid = VALUES(openid),
+       unionid = COALESCE(VALUES(unionid), unionid),
+       openid = COALESCE(VALUES(openid), openid),
+       dingtalk_userid = COALESCE(VALUES(dingtalk_userid), dingtalk_userid),
+       dingtalk_corp_id = COALESCE(VALUES(dingtalk_corp_id), dingtalk_corp_id),
        role = IF(role = 'admin', 'admin', VALUES(role)),
        status = IF(status = 'disabled', 'disabled', 'active'),
        last_login_at = NOW()`,
-    [username, passwordHash, user.nick || username, user.unionid || null, user.openid || null, role]
+    [
+      username,
+      passwordHash,
+      user.nick || username,
+      user.unionid || null,
+      user.openid || null,
+      dingTalkUserId || null,
+      dingTalkCorpId || null,
+      role
+    ]
   );
 
-  const stored = user.unionid ? await findUserByUnionId(user.unionid) : await findUserByUsername(username);
+  const stored = user.unionid
+    ? await findUserByUnionId(user.unionid)
+    : dingTalkUserId && dingTalkCorpId
+      ? await findUserByDingTalkUserId(dingTalkCorpId, dingTalkUserId)
+      : await findUserByUsername(username);
   return { user: stored, generatedPassword: password };
 }
 
 export async function findUserByUnionId(unionid) {
   const db = getPool();
   const [rows] = await db.query('SELECT * FROM users WHERE unionid = ? LIMIT 1', [unionid]);
+  return rows[0] || null;
+}
+
+export async function findUserByDingTalkUserId(corpId, userId) {
+  const db = getPool();
+  const [rows] = await db.query('SELECT * FROM users WHERE dingtalk_corp_id = ? AND dingtalk_userid = ? LIMIT 1', [
+    corpId,
+    userId
+  ]);
   return rows[0] || null;
 }
 
@@ -785,9 +902,22 @@ async function ensureUserColumns(db) {
     await db.query('ALTER TABLE users ADD COLUMN password_changed_at DATETIME NULL AFTER must_change_password');
   }
 
+  if (!existingColumns.has('dingtalk_userid')) {
+    await db.query('ALTER TABLE users ADD COLUMN dingtalk_userid VARCHAR(128) NULL AFTER openid');
+  }
+
+  if (!existingColumns.has('dingtalk_corp_id')) {
+    await db.query('ALTER TABLE users ADD COLUMN dingtalk_corp_id VARCHAR(128) NULL AFTER dingtalk_userid');
+  }
+
   const [indexes] = await db.query("SHOW INDEX FROM users WHERE Key_name = 'idx_users_status'");
   if (indexes.length === 0) {
     await db.query('ALTER TABLE users ADD INDEX idx_users_status (status)');
+  }
+
+  const [dingTalkIndexes] = await db.query("SHOW INDEX FROM users WHERE Key_name = 'uk_users_dingtalk_userid'");
+  if (dingTalkIndexes.length === 0) {
+    await db.query('ALTER TABLE users ADD UNIQUE KEY uk_users_dingtalk_userid (dingtalk_corp_id, dingtalk_userid)');
   }
 }
 
@@ -819,6 +949,32 @@ async function ensurePersonalCredentialColumns(db) {
   }
 }
 
+async function ensureNavSitePermissionColumns(db) {
+  const [columns] = await db.query(
+    `SELECT COLUMN_NAME AS columnName
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nav_sites'`
+  );
+  const existingColumns = new Set(columns.map((column) => column.columnName));
+
+  if (!existingColumns.has('visibility')) {
+    await db.query("ALTER TABLE nav_sites ADD COLUMN visibility VARCHAR(32) NOT NULL DEFAULT 'all' AFTER tags");
+  }
+
+  if (!existingColumns.has('allowed_roles')) {
+    await db.query('ALTER TABLE nav_sites ADD COLUMN allowed_roles TEXT NULL AFTER visibility');
+  }
+
+  if (!existingColumns.has('allowed_user_ids')) {
+    await db.query('ALTER TABLE nav_sites ADD COLUMN allowed_user_ids TEXT NULL AFTER allowed_roles');
+  }
+
+  const [indexes] = await db.query("SHOW INDEX FROM nav_sites WHERE Key_name = 'idx_nav_sites_visibility'");
+  if (indexes.length === 0) {
+    await db.query('ALTER TABLE nav_sites ADD INDEX idx_nav_sites_visibility (visibility)');
+  }
+}
+
 async function ensureSystemSettings() {
   const db = getPool();
 
@@ -839,11 +995,13 @@ function mapUser(row) {
     nick: row.nick || row.username || '',
     unionid: row.unionid || '',
     openid: row.openid || '',
+    dingtalkUserId: row.dingtalkUserId || row.dingtalk_userid || '',
+    dingtalkCorpId: row.dingtalkCorpId || row.dingtalk_corp_id || '',
     role: normalizeRole(row.role),
     status: normalizeStatus(row.status),
     mustChangePassword: Boolean(row.mustChangePassword ?? row.must_change_password),
     passwordChangedAt: row.passwordChangedAt || row.password_changed_at || null,
-    authType: row.unionid ? 'dingtalk' : 'local',
+    authType: row.unionid || row.dingtalk_userid ? 'dingtalk' : 'local',
     lastLoginAt: row.lastLoginAt || row.last_login_at || null,
     createdAt: row.createdAt || row.created_at || null,
     updatedAt: row.updatedAt || row.updated_at || null,
@@ -952,6 +1110,43 @@ function normalizeSystemSettingValue(key, value) {
   return String(value || '').trim().slice(0, 500);
 }
 
+function normalizeWorkspaceTheme(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const mode = ['solid', 'gradient', 'image'].includes(source.mode) ? source.mode : DEFAULT_WORKSPACE_THEME.mode;
+  const imageUrl = normalizeWorkspaceImageUrl(source.imageUrl);
+
+  return {
+    mode: mode === 'image' && !imageUrl ? 'gradient' : mode,
+    solidColor: normalizeHexColor(source.solidColor, DEFAULT_WORKSPACE_THEME.solidColor),
+    gradientStart: normalizeHexColor(source.gradientStart, DEFAULT_WORKSPACE_THEME.gradientStart),
+    gradientEnd: normalizeHexColor(source.gradientEnd, DEFAULT_WORKSPACE_THEME.gradientEnd),
+    gradientAngle: clampInteger(source.gradientAngle, 0, 360, DEFAULT_WORKSPACE_THEME.gradientAngle),
+    imageUrl,
+    overlay: clampInteger(source.overlay, 0, 80, DEFAULT_WORKSPACE_THEME.overlay)
+  };
+}
+
+function normalizeHexColor(value, fallback) {
+  const text = String(value || '').trim();
+  return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : fallback;
+}
+
+function normalizeWorkspaceImageUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) {
+    return '';
+  }
+
+  if (
+    !/^\/api\/user\/workspace-theme\/backgrounds\/[A-Za-z0-9_.-]+$/.test(text) &&
+    !/^\/uploads\/workspace-backgrounds\/\d+\/[A-Za-z0-9_.-]+$/.test(text)
+  ) {
+    throw new Error('背景图片地址无效。');
+  }
+
+  return text.slice(0, 500);
+}
+
 function clampInteger(value, min, max, fallback) {
   const number = Number(value);
   if (!Number.isInteger(number)) {
@@ -980,12 +1175,120 @@ function normalizeSiteGroups(value) {
                 : String(site.tags || '')
                     .split(/[,，]/)
                     .map((tag) => tag.trim())
-                    .filter(Boolean)
+                    .filter(Boolean),
+              visibility: normalizeSiteVisibility(site.visibility),
+              allowedRoles: normalizeRoleList(site.allowedRoles ?? site.allowed_roles),
+              allowedUserIds: normalizeUserIdList(site.allowedUserIds ?? site.allowed_user_ids)
             }))
             .filter((site) => site.name && site.url)
         : []
     }))
     .filter((group) => group.name);
+}
+
+function mapSite(site, includePermissions = false) {
+  const mapped = {
+    id: site.id,
+    name: site.name,
+    url: site.url,
+    description: site.description,
+    tags: parseTags(site.tags)
+  };
+
+  if (includePermissions) {
+    mapped.visibility = normalizeSiteVisibility(site.visibility);
+    mapped.allowedRoles = normalizeRoleList(site.allowedRoles);
+    mapped.allowedUserIds = normalizeUserIdList(site.allowedUserIds);
+  }
+
+  return mapped;
+}
+
+function isSiteVisibleToUser(site, user) {
+  if (!user) {
+    return false;
+  }
+
+  if (normalizeRole(user.role) === 'admin') {
+    return true;
+  }
+
+  const visibility = normalizeSiteVisibility(site.visibility);
+  if (visibility === 'all') {
+    return true;
+  }
+
+  if (visibility === 'admins') {
+    return false;
+  }
+
+  if (visibility === 'roles') {
+    return normalizeRoleList(site.allowedRoles).includes(normalizeRole(user.role));
+  }
+
+  if (visibility === 'users') {
+    return normalizeUserIdList(site.allowedUserIds).includes(Number(user.id));
+  }
+
+  return false;
+}
+
+function normalizeSiteVisibility(value) {
+  const visibility = String(value || '').trim();
+  return ['all', 'admins', 'roles', 'users'].includes(visibility) ? visibility : 'all';
+}
+
+function normalizeRoleList(value) {
+  return [
+    ...new Set(
+      parseArrayLike(value)
+        .map((item) => String(item || '').trim())
+        .filter((item) => item === 'admin' || item === 'member')
+    )
+  ];
+}
+
+function normalizeUserIdList(value) {
+  return [
+    ...new Set(
+      parseArrayLike(value)
+        .map((item) => Number(item))
+        .filter((item) => Number.isSafeInteger(item) && item > 0)
+    )
+  ];
+}
+
+function parseArrayLike(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (value === null || value === undefined || value === '') {
+    return [];
+  }
+
+  if (typeof value === 'number') {
+    return [value];
+  }
+
+  const text = String(value || '').trim();
+  if (!text) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // Fall through to comma parsing for old or manually edited values.
+  }
+
+  return text
+    .split(/[,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function parseTags(value) {
@@ -1146,7 +1449,10 @@ function getVaultKey() {
 }
 
 function toMysqlDate(value) {
-  return value.toISOString().slice(0, 19).replace('T', ' ');
+  const pad = (number) => String(number).padStart(2, '0');
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())} ${pad(value.getHours())}:${pad(
+    value.getMinutes()
+  )}:${pad(value.getSeconds())}`;
 }
 
 function createUsername(user) {
@@ -1154,7 +1460,17 @@ function createUsername(user) {
     return `ding_${user.unionid}`.slice(0, 120);
   }
 
-  return String(user.nick || user.openid || 'dingtalk_user').trim().slice(0, 120);
+  const dingTalkUserId = user.userid || user.userId || user.dingtalkUserId || '';
+  if (dingTalkUserId) {
+    const corpPart = String(user.corpId || user.corp_id || 'corp').replace(/[^a-zA-Z0-9_-]/g, '');
+    return `ding_${corpPart}_${dingTalkUserId}`.slice(0, 120);
+  }
+
+  if (user.openid) {
+    return `ding_${user.openid}`.slice(0, 120);
+  }
+
+  return String(user.nick || 'dingtalk_user').trim().slice(0, 120);
 }
 
 function createRandomPassword() {

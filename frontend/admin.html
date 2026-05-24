@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>管理中枢 - 汐航</title>
-    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/styles/styles.css" />
   </head>
   <body class="console-page admin-page admin-reference-page">
     <aside id="sidebar" class="side-rail admin-sidebar" aria-label="管理导航">
@@ -51,6 +51,7 @@
         <div>
           <p class="eyebrow">ADMIN CONSOLE</p>
           <h1 id="admin-title">管理中枢</h1>
+          <p class="topbar-subtitle">管理员创建成员、分配角色、维护站点矩阵，并追踪关键操作。</p>
         </div>
         <div class="console-user">
           <button id="logoutBtn" type="button">退出</button>
@@ -83,7 +84,7 @@
       <section class="command-strip compact-strip admin-command">
         <div>
           <p>运营管理</p>
-          <h2>管理员统一维护用户、角色、状态和站点入口，成员不能自行注册。</h2>
+          <h2>成员账号、权限、站点和审计集中治理，普通成员不开放自助注册。</h2>
         </div>
         <div class="switch-tabs" role="tablist" aria-label="管理视图">
           <button class="admin-tab active" type="button" data-admin-panel="users">用户管理</button>
@@ -301,6 +302,6 @@
       </footer>
     </main>
 
-    <script type="module" src="/src/admin.js"></script>
+    <script type="module" src="/src/pages/admin.js?v=20260523-access"></script>
   </body>
 </html>

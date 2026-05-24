@@ -9,7 +9,9 @@
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "start": "node backend/src/server.js",
     "check": "node --check backend/src/server.js",
-    "build:frontend": "vite build"
+    "build:frontend": "vite build",
+    "test:user-scenarios": "node scripts/user-scenario-smoke.mjs && node scripts/admin-module-smoke.mjs",
+    "verify:refactor": "node scripts/verify-after-refactor.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

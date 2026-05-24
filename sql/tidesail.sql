@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS `users` (
   `nick` VARCHAR(160) NOT NULL DEFAULT '',
   `unionid` VARCHAR(128) NULL,
   `openid` VARCHAR(128) NULL,
+  `dingtalk_userid` VARCHAR(128) NULL,
+  `dingtalk_corp_id` VARCHAR(128) NULL,
   `role` VARCHAR(32) NOT NULL DEFAULT 'member',
   `status` VARCHAR(32) NOT NULL DEFAULT 'active',
   `must_change_password` TINYINT(1) NOT NULL DEFAULT 0,
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_users_username` (`username`),
   UNIQUE KEY `uk_users_unionid` (`unionid`),
+  UNIQUE KEY `uk_users_dingtalk_userid` (`dingtalk_corp_id`, `dingtalk_userid`),
   KEY `idx_users_role` (`role`),
   KEY `idx_users_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -47,11 +50,15 @@ CREATE TABLE IF NOT EXISTS `nav_sites` (
   `url` VARCHAR(1000) NOT NULL,
   `description` VARCHAR(500) NOT NULL DEFAULT '',
   `tags` TEXT NULL,
+  `visibility` VARCHAR(32) NOT NULL DEFAULT 'all',
+  `allowed_roles` TEXT NULL,
+  `allowed_user_ids` TEXT NULL,
   `sort_order` INT NOT NULL DEFAULT 0,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_nav_sites_group_sort` (`group_id`, `sort_order`),
+  KEY `idx_nav_sites_visibility` (`visibility`),
   UNIQUE KEY `uk_nav_sites_group_name` (`group_id`, `name`),
   CONSTRAINT `fk_nav_sites_group` FOREIGN KEY (`group_id`) REFERENCES `nav_groups` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -119,6 +126,25 @@ CREATE TABLE IF NOT EXISTS `admin_audit_logs` (
   KEY `idx_admin_audit_logs_actor` (`actor_user_id`),
   KEY `idx_admin_audit_logs_action` (`action`),
   CONSTRAINT `fk_admin_audit_logs_actor` FOREIGN KEY (`actor_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `user_preferences` (
+  `user_id` BIGINT UNSIGNED NOT NULL,
+  `workspace_theme` TEXT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`),
+  CONSTRAINT `fk_user_preferences_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `app_sessions` (
+  `sid` VARCHAR(128) NOT NULL,
+  `session_data` MEDIUMTEXT NOT NULL,
+  `expires_at` DATETIME NOT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`sid`),
+  KEY `idx_app_sessions_expires` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Reset only the built-in demo groups before inserting seed data.
