@@ -394,7 +394,7 @@ function renderSites(sites) {
   return sites
     .map(
       (site) => `<a class="system-card" href="${escapeHtml(createSsoUrl(site))}" target="_blank" rel="noreferrer">
-  <span class="system-icon">${escapeHtml(getInitial(site.name))}</span>
+  <span class="system-icon" style="background: ${getSiteGradient(site.name)};">${getSiteIcon(site.name)}</span>
   <div class="system-card-body">
     <strong>${escapeHtml(site.name)}</strong>
     <p>${escapeHtml(site.description || '安全打开这个内部系统')}</p>
@@ -436,8 +436,50 @@ function countSites(groups) {
   return groups.reduce((total, group) => total + (group.sites || []).length, 0);
 }
 
-function getInitial(name = '') {
-  return String(name).trim().slice(0, 1).toUpperCase() || '星';
+function getSiteIcon(name = '') {
+  const icons = {
+    '万弘': '📦',
+    '虹硕': '🏢',
+    'TeamKB': '📋',
+    'TeamKb': '📋',
+    '文件': '📤',
+    'Claude': '🤖',
+    'Things': '📡',
+    'Quant': '🛒',
+    'Gitea': '🔀',
+    'n8n': '⚡',
+    'Mirr': '🪟',
+    'Watch': '👁',
+    'CDN': '🌐',
+    'AI API': '🔑',
+  };
+  for (const [key, icon] of Object.entries(icons)) {
+    if (name.includes(key)) return icon;
+  }
+  return '🔗';
+}
+
+function getSiteGradient(name = '') {
+  const gradients = {
+    '万弘': 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    '虹硕': 'linear-gradient(135deg, #10b981, #059669)',
+    'TeamKB': 'linear-gradient(135deg, #f97316, #ef4444)',
+    'TeamKb': 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    '文件': 'linear-gradient(135deg, #06b6d4, #0891b2)',
+    'Claude': 'linear-gradient(135deg, #a855f7, #d946ef)',
+    'Things': 'linear-gradient(135deg, #22c55e, #16a34a)',
+    'Quant': 'linear-gradient(135deg, #f59e0b, #d97706)',
+    'Gitea': 'linear-gradient(135deg, #f97316, #ea580c)',
+    'n8n': 'linear-gradient(135deg, #14b8a6, #0d9488)',
+    'Mirr': 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+    'Watch': 'linear-gradient(135deg, #ec4899, #db2777)',
+    'CDN': 'linear-gradient(135deg, #4f46e5, #4338ca)',
+    'AI API': 'linear-gradient(135deg, #6b7280, #4b5563)',
+  };
+  for (const [key, gradient] of Object.entries(gradients)) {
+    if (name.includes(key)) return gradient;
+  }
+  return 'linear-gradient(135deg, #6366f1, #8b5cf6)';
 }
 
 function escapeHtml(value = '') {

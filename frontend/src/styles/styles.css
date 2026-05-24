@@ -1155,13 +1155,19 @@ textarea.field-input {
 
 .system-icon {
   display: grid;
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   place-items: center;
-  color: #fff;
-  background: linear-gradient(135deg, var(--primary), var(--teal));
-  border-radius: 12px;
-  font-weight: 820;
+  border-radius: 14px;
+  font-size: 22px;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+.system-card:hover .system-icon {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.2);
 }
 
 .system-card-body {
