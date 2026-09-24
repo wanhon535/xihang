@@ -865,12 +865,13 @@ async function saveProject(event) {
   projectSaveBtn.disabled = true;
   projectFormStatus.textContent = '正在保存...';
   try {
-    await api(editingProject ? `/api/admin/projects/${editingProject.id}` : '/api/admin/projects', {
+    const result = await api(editingProject ? `/api/admin/projects/${editingProject.id}` : '/api/admin/projects', {
       method: editingProject ? 'PUT' : 'POST',
       body: JSON.stringify(payload)
     });
-    const payload2 = await api('/api/admin/projects');
-    projects = payload2.projects || [];
+    projects = editingProject
+      ? projects.map((p) => (p.id === result.project.id ? result.project : p))
+      : [...projects, result.project];
     renderProjects();
     await refreshAuditLogs();
     projectDialog.close();

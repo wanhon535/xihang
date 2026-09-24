@@ -467,7 +467,10 @@ body.vben-shell.console-page {isolation:isolate}
 .app-toast[data-state='leaving'] {opacity:0;transform:translateY(-4px)}
 .app-toast.is-centered[data-state='visible'] {transform:translate(-50%,0)}
 @media(prefers-reduced-motion:reduce){.vben-shell.console-page #seasonalParticles {display:none!important}.app-toast {transition:none}.vben-shell.console-page .side-rail,.vben-shell.console-page .workspace-header,.vben-shell.console-page .workspace-tabs,.vben-shell.console-page .console-main {transition:none}}
-body.vben-shell.console-page .console-topbar.page-heading {display:none}
+/* Only the home page duplicates this heading in its own hero banner; every
+   other console page (vault/ledger/screen/admin) relies on it to show its
+   title and description, so it must stay visible there. */
+.vben-shell.home-page .console-topbar.page-heading {display:none}
 
 /* Keep location labels in navigation, and give the application directory the full row. */
 .vben-shell.home-page .workspace-columns {grid-template-columns:minmax(0,1fr)}

@@ -25,20 +25,24 @@ export function formatDate(ts) {
 
 export function buildTaskText(project) {
   if (project.note && project.note.trim()) return project.note.trim();
-  if (project.next_milestone && project.next_milestone.trim()) return `推进下一个节点：${project.next_milestone.trim()}`;
-  return '缺少 note / next_milestone 描述，需要项目负责人补充当前该做什么';
+  if (project.nextMilestone && project.nextMilestone.trim()) return `推进下一个节点：${project.nextMilestone.trim()}`;
+  return '缺少 note / nextMilestone 描述，需要项目负责人补充当前该做什么';
 }
 
 // Returns per-project judgment plus the four grouped views the supervisor
 // agent and the dashboard both need: stalled / today_tasks / backlog / data_issues.
+// Projects are expected in the same camelCase shape backend/src/db.js's
+// listProjects() returns (lastUpdate, nextMilestone, nextMilestoneDate); the
+// --data= JSON-file path in scripts/xigou-supervisor-brief.mjs converts its
+// snake_case file format to this shape once at load time.
 export function classifyProjects(projects, todayTs, { maxTodayTasks = 12 } = {}) {
   const active = projects.filter(p => p.status === 'active');
   const dataIssues = [];
   const enriched = active.map(project => {
-    const lastUpdateTs = toUtcMidnight(project.last_update);
-    const milestoneTs = toUtcMidnight(project.next_milestone_date);
-    if (!project.last_update || lastUpdateTs === null) {
-      dataIssues.push({ name: project.name, issue: 'last_update 缺失或格式不对，已跳过停滞判断' });
+    const lastUpdateTs = toUtcMidnight(project.lastUpdate);
+    const milestoneTs = toUtcMidnight(project.nextMilestoneDate);
+    if (!project.lastUpdate || lastUpdateTs === null) {
+      dataIssues.push({ name: project.name, issue: 'lastUpdate 缺失或格式不对，已跳过停滞判断' });
     }
     const staleDays = lastUpdateTs === null ? null : daysBetween(lastUpdateTs, todayTs);
     const isStalled = staleDays !== null && staleDays > STALLED_THRESHOLD_DAYS;

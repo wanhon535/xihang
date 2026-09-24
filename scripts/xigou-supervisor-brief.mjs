@@ -42,6 +42,23 @@ function parseArgs(argv) {
   return args;
 }
 
+// data/xigou-projects.json (the --data= offline-testing format) predates the
+// projects table and still uses snake_case field names; classifyProjects()
+// (backend/src/project-status.js) speaks the camelCase shape listProjects()
+// returns, so this converts once at load time rather than adapting on every read.
+function snakeToCamelProject(row) {
+  return {
+    name: row.name,
+    status: row.status,
+    priority: row.priority,
+    lastUpdate: row.last_update,
+    nextMilestone: row.next_milestone,
+    nextMilestoneDate: row.next_milestone_date,
+    note: row.note,
+    ownerPhone: row.owner_phone
+  };
+}
+
 async function loadProjectsFromFile(dataPath) {
   const raw = await readFile(dataPath, 'utf8');
   const parsed = JSON.parse(raw);
@@ -49,23 +66,7 @@ async function loadProjectsFromFile(dataPath) {
   if (!Array.isArray(list)) {
     throw new Error(`项目数据文件格式不对：${dataPath} 需要是数组，或包含 projects 数组字段。`);
   }
-  return list;
-}
-
-// classifyProjects() speaks the original data/xigou-projects.json field names
-// (snake_case); the projects table (and its admin CRUD) uses camelCase like the
-// rest of the REST API. This adapts one to the other without touching either.
-function toClassifiableProject(row) {
-  return {
-    name: row.name,
-    status: row.status,
-    priority: row.priority,
-    last_update: row.lastUpdate,
-    next_milestone: row.nextMilestone,
-    next_milestone_date: row.nextMilestoneDate,
-    note: row.note,
-    owner_phone: row.ownerPhone
-  };
+  return list.map(snakeToCamelProject);
 }
 
 function renderMarkdown(date, brief) {
@@ -136,8 +137,7 @@ async function loadFromDatabase({ needProjects }) {
     if (settings.dingtalkNotifyDeptIds) config.dingtalk.deptIds = settings.dingtalkNotifyDeptIds;
     if (settings.dingtalkNotifyAppSecret) config.dingtalk.appSecret = await dbModule.getDecryptedSystemSetting('dingtalkNotifyAppSecret');
     if (needProjects) {
-      const rows = await dbModule.listProjects();
-      projects = rows.map(toClassifiableProject);
+      projects = await dbModule.listProjects();
     }
   } catch (error) {
     console.warn(`[配置] 未能连接数据库读取管理中枢的自动化通知配置，回退到 .env：${error.message}`);
@@ -178,7 +178,7 @@ async function sendSmsAliyun({ sms, phone, message, dryRun }) {
     return { sent: false, reason: '缺少短信网关配置（管理中枢 → 自动化通知，或 .env 的 ALIYUN_SMS_*），短信未发送' };
   }
   if (!phone) {
-    return { sent: false, reason: '项目未配置 owner_phone，短信未发送' };
+    return { sent: false, reason: '项目未配置负责人手机号（ownerPhone），短信未发送' };
   }
   if (dryRun) {
     return { sent: false, reason: '预演模式（未加 --send-sms），未实际发送', preview: message };
@@ -238,7 +238,8 @@ async function getDingtalkAccessToken(dingtalk) {
       res.on('end', () => resolve(data));
     }).on('error', reject);
   });
-  const parsed = JSON.parse(body);
+  let parsed;
+  try { parsed = JSON.parse(body); } catch { return null; }
   return parsed.errcode === 0 ? parsed.access_token : null;
 }
 
@@ -251,33 +252,40 @@ async function sendDingtalkNotification({ dingtalk, markdown, dryRun }) {
     return { sent: false, reason: '预演模式（未加 --send-dingtalk），未实际发送' };
   }
 
-  const accessToken = await getDingtalkAccessToken(dingtalk);
-  if (!accessToken) return { sent: false, reason: '获取钉钉 access_token 失败，请检查 AppKey/AppSecret 配置' };
+  // 钉钉工作通知失败（网络问题、返回非 JSON 等）不能让 main() 整体 reject——
+  // 那样后面停滞项目的短信预警循环就会被跳过，即使两者毫无关系。
+  try {
+    const accessToken = await getDingtalkAccessToken(dingtalk);
+    if (!accessToken) return { sent: false, reason: '获取钉钉 access_token 失败，请检查 AppKey/AppSecret 配置' };
 
-  const payload = JSON.stringify({
-    agent_id: agentId,
-    userid_list: userIds || undefined,
-    dept_id_list: deptIds || undefined,
-    to_all_user: false,
-    msg: { msgtype: 'markdown', markdown: { title: '汐构今日推进清单', text: markdown } }
-  });
-
-  const body = await new Promise((resolve, reject) => {
-    const req = https.request(`https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token=${accessToken}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    }, res => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => resolve(data));
+    const payload = JSON.stringify({
+      agent_id: agentId,
+      userid_list: userIds || undefined,
+      dept_id_list: deptIds || undefined,
+      to_all_user: false,
+      msg: { msgtype: 'markdown', markdown: { title: '汐构今日推进清单', text: markdown } }
     });
-    req.on('error', reject);
-    req.write(payload);
-    req.end();
-  });
 
-  const parsed = JSON.parse(body);
-  return { sent: parsed.errcode === 0, reason: parsed.errmsg || '未知响应', raw: parsed };
+    const body = await new Promise((resolve, reject) => {
+      const req = https.request(`https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token=${accessToken}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }, res => {
+        let data = '';
+        res.on('data', chunk => { data += chunk; });
+        res.on('end', () => resolve(data));
+      });
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    });
+
+    let parsed;
+    try { parsed = JSON.parse(body); } catch { return { sent: false, reason: `钉钉接口返回了非预期内容：${body.slice(0, 200)}` }; }
+    return { sent: parsed.errcode === 0, reason: parsed.errmsg || '未知响应', raw: parsed };
+  } catch (error) {
+    return { sent: false, reason: `钉钉工作通知发送失败：${error.message}` };
+  }
 }
 
 async function main() {
@@ -321,7 +329,7 @@ async function main() {
     }
     const project = projects.find(p => p.name === s.name);
     const message = `【汐构监督】${s.name} 已停滞 ${s.days} 天，请及时跟进。`;
-    const result = await sendSms({ sms: config.sms, phone: project?.owner_phone, message, dryRun: !args.sendSms });
+    const result = await sendSms({ sms: config.sms, phone: project?.ownerPhone, message, dryRun: !args.sendSms });
     smsResults.push({ name: s.name, ...result });
     if (result.sent) state.smsSentProjects.push(s.name);
   }
