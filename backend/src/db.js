@@ -246,6 +246,7 @@ export async function initDatabase() {
     CREATE TABLE IF NOT EXISTS user_preferences (
       user_id BIGINT UNSIGNED NOT NULL,
       workspace_theme TEXT NULL,
+      home_layout TEXT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (user_id),
@@ -269,6 +270,7 @@ export async function initDatabase() {
   await ensureUserColumns(db);
   await ensurePersonalCredentialColumns(db);
   await ensureNavSitePermissionColumns(db);
+  await ensureUserPreferenceColumns(db);
   await ensureSystemSettings();
 
   const [[{ count }]] = await db.query('SELECT COUNT(*) AS count FROM nav_groups');
@@ -660,6 +662,40 @@ export async function getAdminOverview() {
   };
 }
 
+const DEFAULT_HOME_LAYOUT = ['hero', 'stats', 'app-map'];
+const HOME_LAYOUT_SECTIONS = new Set(DEFAULT_HOME_LAYOUT);
+
+function normalizeHomeLayout(value) {
+  const seen = new Set();
+  const order = (Array.isArray(value) ? value : [])
+    .filter((id) => typeof id === 'string' && HOME_LAYOUT_SECTIONS.has(id) && !seen.has(id) && seen.add(id));
+  for (const id of DEFAULT_HOME_LAYOUT) if (!seen.has(id)) order.push(id);
+  return order;
+}
+
+export async function getUserHomeLayout(userId) {
+  const db = getPool();
+  const [rows] = await db.query('SELECT home_layout AS homeLayout FROM user_preferences WHERE user_id = ? LIMIT 1', [userId]);
+  if (!rows[0]?.homeLayout) return [...DEFAULT_HOME_LAYOUT];
+  try {
+    return normalizeHomeLayout(JSON.parse(rows[0].homeLayout));
+  } catch {
+    return [...DEFAULT_HOME_LAYOUT];
+  }
+}
+
+export async function updateUserHomeLayout(userId, value) {
+  const layout = normalizeHomeLayout(value);
+  const db = getPool();
+  await db.query(
+    `INSERT INTO user_preferences (user_id, home_layout)
+     VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE home_layout = VALUES(home_layout)`,
+    [userId, JSON.stringify(layout)]
+  );
+  return layout;
+}
+
 export async function getUserWorkspaceTheme(userId) {
   const db = getPool();
   const [rows] = await db.query('SELECT workspace_theme AS workspaceTheme FROM user_preferences WHERE user_id = ? LIMIT 1', [
@@ -1028,6 +1064,18 @@ async function ensurePersonalCredentialColumns(db) {
     await db.query(
       'ALTER TABLE personal_credentials ADD INDEX idx_personal_credentials_user_favorite (user_id, is_favorite, updated_at)'
     );
+  }
+}
+
+async function ensureUserPreferenceColumns(db) {
+  const [columns] = await db.query(
+    `SELECT COLUMN_NAME AS columnName
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_preferences'`
+  );
+  const existingColumns = new Set(columns.map((column) => column.columnName));
+  if (!existingColumns.has('home_layout')) {
+    await db.query('ALTER TABLE user_preferences ADD COLUMN home_layout TEXT NULL AFTER workspace_theme');
   }
 }
 

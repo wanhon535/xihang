@@ -27,6 +27,7 @@ import {
   getPersonalCredentialSecret,
   getSiteGroups,
   getSiteGroupsForUser,
+  getUserHomeLayout,
   getUserWorkspaceTheme,
   initDatabase,
   listAuditLogs,
@@ -39,6 +40,7 @@ import {
   touchUserLogin,
   updatePersonalCredential,
   updateSystemSettings,
+  updateUserHomeLayout,
   updateUserWorkspaceTheme,
   updateUser,
   upsertDingTalkUser
@@ -457,6 +459,23 @@ app.put('/api/user/workspace-theme', requireLogin, async (req, res, next) => {
   try {
     const theme = await updateUserWorkspaceTheme(req.session.user.id, req.body.theme);
     res.json({ ok: true, theme });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/user/home-layout', requireLogin, async (req, res, next) => {
+  try {
+    res.json({ ok: true, layout: await getUserHomeLayout(req.session.user.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/user/home-layout', requireLogin, async (req, res, next) => {
+  try {
+    const layout = await updateUserHomeLayout(req.session.user.id, req.body.layout);
+    res.json({ ok: true, layout });
   } catch (error) {
     next(error);
   }

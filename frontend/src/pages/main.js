@@ -56,6 +56,7 @@ async function init() {
     document.querySelectorAll('.admin-only').forEach((node) => node.classList.toggle('hidden', user.role !== 'admin'));
     // Loading a user's optional theme must not block the application directory.
     setWorkspaceUser(user);
+    void initHomeLayout();
     const payload = await api('/api/nav/groups');
     allGroups = payload.groups || [];
     groupCount.textContent = allGroups.length;
@@ -173,6 +174,73 @@ function getSiteIcon() {
 
 function getSiteGradient() {
   return '#edf5f8';
+}
+
+// Each block on the workspace home page (welcome banner, stats, app directory)
+// can be dragged by its grip handle to reorder; the order is saved per account
+// so it follows the person across devices, not just this browser.
+async function initHomeLayout() {
+  const root = document.querySelector('#homeLayout');
+  if (!root) return;
+  const widgets = () => [...root.querySelectorAll(':scope > .home-widget')];
+
+  try {
+    const payload = await api('/api/user/home-layout');
+    const order = payload.layout || [];
+    const byId = new Map(widgets().map((node) => [node.dataset.widgetId, node]));
+    for (const id of order) {
+      const node = byId.get(id);
+      if (node) root.append(node);
+    }
+  } catch {
+    // A stale/default order is a cosmetic issue only; the directory itself still loads.
+  }
+
+  let dragging = null;
+
+  function clearDropMarkers() {
+    widgets().forEach((node) => node.classList.remove('drag-over-before', 'drag-over-after'));
+  }
+
+  function persistOrder() {
+    const order = widgets().map((node) => node.dataset.widgetId);
+    api('/api/user/home-layout', { method: 'PUT', body: JSON.stringify({ layout: order }) }).catch(() => {});
+  }
+
+  widgets().forEach((widget) => {
+    const handle = widget.querySelector('.home-widget-handle');
+    if (!handle) return;
+    handle.draggable = true;
+    handle.addEventListener('dragstart', (event) => {
+      dragging = widget;
+      widget.classList.add('is-dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', widget.dataset.widgetId);
+    });
+    handle.addEventListener('dragend', () => {
+      widget.classList.remove('is-dragging');
+      dragging = null;
+      clearDropMarkers();
+    });
+
+    widget.addEventListener('dragover', (event) => {
+      if (!dragging || dragging === widget) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const before = event.clientY < widget.getBoundingClientRect().top + widget.offsetHeight / 2;
+      widget.classList.toggle('drag-over-before', before);
+      widget.classList.toggle('drag-over-after', !before);
+    });
+    widget.addEventListener('dragleave', () => widget.classList.remove('drag-over-before', 'drag-over-after'));
+    widget.addEventListener('drop', (event) => {
+      if (!dragging || dragging === widget) return;
+      event.preventDefault();
+      const before = widget.classList.contains('drag-over-before');
+      clearDropMarkers();
+      widget.insertAdjacentElement(before ? 'beforebegin' : 'afterend', dragging);
+      persistOrder();
+    });
+  });
 }
 
 function escapeHtml(value = '') {
