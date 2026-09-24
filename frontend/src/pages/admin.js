@@ -38,6 +38,15 @@ const settingsStatusNodes = [
   document.querySelector('#automationSettingsStatus'),
   document.querySelector('#backupStatus')
 ].filter(Boolean);
+const addProjectBtn = document.querySelector('#addProjectBtn');
+const projectRows = document.querySelector('#projectRows');
+const projectListStatus = document.querySelector('#projectListStatus');
+const projectDialog = document.querySelector('#projectEditDialog');
+const projectForm = document.querySelector('#projectForm');
+const projectFormStatus = document.querySelector('#projectFormStatus');
+const projectCancelBtn = document.querySelector('#projectCancelBtn');
+const projectSaveBtn = document.querySelector('#projectSaveBtn');
+const projectFields = ['name', 'status', 'priority', 'lastUpdate', 'nextMilestone', 'nextMilestoneDate', 'ownerPhone', 'note'];
 const statTotalUsers = document.querySelector('#stat-total-users');
 const statOnlineUsers = document.querySelector('#stat-online-users');
 const statNewUsers = document.querySelector('#stat-new-users');
@@ -80,7 +89,10 @@ const actionLabels = {
   'user.reset_password': '重置密码',
   'sites.save': '保存站点',
   'settings.update': '更新配置',
-  'backup.export': '导出快照'
+  'backup.export': '导出快照',
+  'project.create': '创建项目',
+  'project.update': '更新项目',
+  'project.delete': '删除项目'
 };
 
 let currentUser = null;
@@ -89,6 +101,8 @@ let users = [];
 let overview = {};
 let settings = {};
 let auditLogs = [];
+let projects = [];
+let editingProject = null;
 
 logoutBtn.addEventListener('click', logout);
 addGroupBtn.addEventListener('click', () => {
@@ -96,6 +110,9 @@ addGroupBtn.addEventListener('click', () => {
   renderGroups();
 });
 saveBtn.addEventListener('click', saveGroups);
+addProjectBtn.addEventListener('click', () => openProjectEditor(null));
+projectCancelBtn.addEventListener('click', () => { if (!projectForm.dataset.saving) projectDialog.close(); });
+projectForm.addEventListener('submit', saveProject);
 createUserForm.addEventListener('submit', createUser);
 adminSearch.addEventListener('input', renderUsers);
 const roleFilter = document.querySelector('#memberRoleFilter');
@@ -161,12 +178,13 @@ async function init() {
     setWorkspaceUser(currentUser);
     userName.textContent = currentUser.nick || currentUser.username || '汐航管理员';
 
-    const [overviewPayload, groupPayload, userPayload, settingsPayload, logPayload] = await Promise.all([
+    const [overviewPayload, groupPayload, userPayload, settingsPayload, logPayload, projectPayload] = await Promise.all([
       api('/api/admin/overview'),
       api('/api/admin/groups'),
       api('/api/admin/users'),
       api('/api/admin/settings'),
-      api('/api/admin/audit-logs')
+      api('/api/admin/audit-logs'),
+      api('/api/admin/projects')
     ]);
 
     overview = overviewPayload.overview || {};
@@ -174,6 +192,7 @@ async function init() {
     users = userPayload.users || [];
     settings = settingsPayload.settings || overview.settings || {};
     auditLogs = logPayload.logs || [];
+    projects = projectPayload.projects || [];
 
     renderGroups();
     renderUsers();
@@ -182,6 +201,7 @@ async function init() {
     fillSettingsForm();
     renderMonitor();
     renderAuditLogs();
+    renderProjects();
     showPanel(getInitialPanel());
   } catch (error) {
     if (error.status === 401) {
@@ -796,6 +816,85 @@ function formatDate(value) {
     hour: '2-digit',
     minute: '2-digit'
   }).format(date);
+}
+
+const PROJECT_STATUS_LABELS = { active: '进行中', paused: '已暂停', archived: '已归档' };
+
+function renderProjects() {
+  if (projects.length === 0) {
+    projectRows.innerHTML = '<tr><td colspan="6" class="empty-card">还没有项目。新增后会出现在这里，成本台账、数据大屏和监督agent都会用到这份数据。</td></tr>';
+    return;
+  }
+  projectRows.innerHTML = projects.map((project) => `<tr data-project-id="${project.id}">
+  <td>${escapeHtml(project.name)}</td>
+  <td>${escapeHtml(PROJECT_STATUS_LABELS[project.status] || project.status)}</td>
+  <td>${escapeHtml(project.priority)}</td>
+  <td>${escapeHtml(project.lastUpdate || '—')}</td>
+  <td>${escapeHtml(project.nextMilestone || '—')}</td>
+  <td class="row-actions">
+    <button class="plain-btn small" type="button" data-action="edit-project" data-id="${project.id}">编辑</button>
+    <button class="danger-btn small" type="button" data-action="delete-project" data-id="${project.id}">删除</button>
+  </td>
+</tr>`).join('');
+  projectRows.querySelectorAll('[data-action="edit-project"]').forEach((button) => {
+    button.addEventListener('click', () => openProjectEditor(projects.find((p) => p.id === button.dataset.id)));
+  });
+  projectRows.querySelectorAll('[data-action="delete-project"]').forEach((button) => {
+    button.addEventListener('click', () => deleteProjectRow(button.dataset.id));
+  });
+}
+
+function openProjectEditor(project) {
+  editingProject = project || null;
+  projectForm.reset();
+  for (const field of projectFields) {
+    const input = projectForm.elements.namedItem(field);
+    if (input) input.value = project ? (project[field] || '') : (field === 'priority' ? 'P2' : field === 'status' ? 'active' : '');
+  }
+  document.querySelector('#projectDialogTitle').textContent = project ? '编辑项目' : '新增项目';
+  projectFormStatus.textContent = '';
+  projectDialog.showModal();
+  projectForm.elements.namedItem('name').focus();
+}
+
+async function saveProject(event) {
+  event.preventDefault();
+  if (!projectForm.reportValidity()) return;
+  const payload = Object.fromEntries(projectFields.map((field) => [field, projectForm.elements.namedItem(field).value]));
+  projectForm.dataset.saving = '1';
+  projectSaveBtn.disabled = true;
+  projectFormStatus.textContent = '正在保存...';
+  try {
+    await api(editingProject ? `/api/admin/projects/${editingProject.id}` : '/api/admin/projects', {
+      method: editingProject ? 'PUT' : 'POST',
+      body: JSON.stringify(payload)
+    });
+    const payload2 = await api('/api/admin/projects');
+    projects = payload2.projects || [];
+    renderProjects();
+    await refreshAuditLogs();
+    projectDialog.close();
+  } catch (error) {
+    projectFormStatus.textContent = error.message;
+  } finally {
+    delete projectForm.dataset.saving;
+    projectSaveBtn.disabled = false;
+  }
+}
+
+async function deleteProjectRow(projectId) {
+  const project = projects.find((p) => p.id === projectId);
+  if (!project || !window.confirm(`确认删除项目「${project.name}」？成本台账里已经用到这个项目名的记录不会被删除，但监督agent和数据大屏会立刻看不到它。`)) return;
+  projectListStatus.textContent = '正在删除...';
+  try {
+    await api(`/api/admin/projects/${projectId}`, { method: 'DELETE' });
+    projects = projects.filter((p) => p.id !== projectId);
+    renderProjects();
+    await refreshAuditLogs();
+    projectListStatus.textContent = '';
+  } catch (error) {
+    projectListStatus.textContent = error.message;
+  }
 }
 
 function escapeHtml(value = '') {

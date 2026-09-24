@@ -174,7 +174,10 @@ export async function initDatabase() {
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       ticket CHAR(64) NOT NULL,
       target_url VARCHAR(1000) NOT NULL,
+      user_id BIGINT UNSIGNED NULL,
+      username VARCHAR(160) NOT NULL DEFAULT '',
       user_nick VARCHAR(160) NOT NULL DEFAULT '',
+      user_role VARCHAR(32) NOT NULL DEFAULT '',
       unionid VARCHAR(128) NOT NULL DEFAULT '',
       openid VARCHAR(128) NOT NULL DEFAULT '',
       expires_at DATETIME NOT NULL,
@@ -183,6 +186,27 @@ export async function initDatabase() {
       PRIMARY KEY (id),
       UNIQUE KEY uk_sso_tickets_ticket (ticket),
       KEY idx_sso_tickets_expires (expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      name VARCHAR(160) NOT NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'active',
+      priority VARCHAR(8) NOT NULL DEFAULT 'P2',
+      last_update DATE NULL,
+      next_milestone VARCHAR(255) NOT NULL DEFAULT '',
+      next_milestone_date DATE NULL,
+      note TEXT NOT NULL,
+      owner_phone VARCHAR(32) NOT NULL DEFAULT '',
+      created_by BIGINT UNSIGNED NULL,
+      updated_by BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uk_projects_name (name),
+      KEY idx_projects_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
@@ -271,6 +295,7 @@ export async function initDatabase() {
   await ensurePersonalCredentialColumns(db);
   await ensureNavSitePermissionColumns(db);
   await ensureUserPreferenceColumns(db);
+  await ensureSsoTicketColumns(db);
   await ensureSystemSettings();
 
   const [[{ count }]] = await db.query('SELECT COUNT(*) AS count FROM nav_groups');
@@ -364,8 +389,9 @@ export async function replaceSiteGroups(value) {
 export async function createSsoTicket({ ticket, targetUrl, user, expiresAt }) {
   const db = getPool();
   await db.query(
-    'INSERT INTO sso_tickets (ticket, target_url, user_nick, unionid, openid, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [ticket, targetUrl, user.nick || '', user.unionid || '', user.openid || '', toMysqlDate(expiresAt)]
+    `INSERT INTO sso_tickets (ticket, target_url, user_id, username, user_nick, user_role, unionid, openid, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [ticket, targetUrl, user.id, user.username || '', user.nick || '', user.role || '', user.unionid || '', user.openid || '', toMysqlDate(expiresAt)]
   );
 }
 
@@ -389,7 +415,10 @@ export async function consumeSsoTicket(ticket) {
     return {
       targetUrl: record.target_url,
       user: {
+        id: record.user_id,
+        username: record.username,
         nick: record.user_nick,
+        role: record.user_role,
         unionid: record.unionid,
         openid: record.openid
       },
@@ -614,6 +643,113 @@ export async function resetUserPassword(userId, password) {
 export async function deleteUser(userId) {
   const db = getPool();
   const [result] = await db.query('DELETE FROM users WHERE id = ?', [userId]);
+  return result.affectedRows > 0;
+}
+
+const PROJECT_STATUSES = new Set(['active', 'paused', 'archived']);
+const PROJECT_PRIORITIES = new Set(['P0', 'P1', 'P2', 'P3']);
+
+function normalizeProjectDate(value, label) {
+  if (value == null || value === '') return null;
+  const text = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
+    throw new Error(`${label}格式不对，需要 YYYY-MM-DD。`);
+  }
+  return text;
+}
+
+function normalizeProjectInput(value) {
+  if (!value || typeof value !== 'object') throw new Error('项目参数无效。');
+  const name = String(value.name || '').trim();
+  if (!name || name.length > 160) throw new Error('项目名称不能为空，且不超过 160 字。');
+  const status = PROJECT_STATUSES.has(value.status) ? value.status : 'active';
+  const priority = PROJECT_PRIORITIES.has(value.priority) ? value.priority : 'P2';
+  const nextMilestone = String(value.nextMilestone || '').trim().slice(0, 255);
+  const note = String(value.note || '').trim().slice(0, 2000);
+  const ownerPhone = String(value.ownerPhone || '').trim().slice(0, 32);
+  if (ownerPhone && !/^[\d+\-\s]{6,32}$/.test(ownerPhone)) throw new Error('负责人手机号格式不对。');
+  return {
+    name,
+    status,
+    priority,
+    lastUpdate: normalizeProjectDate(value.lastUpdate, '最近更新日期'),
+    nextMilestone,
+    nextMilestoneDate: normalizeProjectDate(value.nextMilestoneDate, '下一个节点日期'),
+    note,
+    ownerPhone
+  };
+}
+
+function mapProjectRow(row) {
+  return {
+    id: String(row.id),
+    name: row.name,
+    status: row.status,
+    priority: row.priority,
+    lastUpdate: row.lastUpdate,
+    nextMilestone: row.nextMilestone,
+    nextMilestoneDate: row.nextMilestoneDate,
+    note: row.note,
+    ownerPhone: row.ownerPhone,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+
+// 管理中枢的“项目管理”面板、成本台账的项目下拉、数据大屏和汐构监督agent
+// 共用这一份项目数据（取代早期手动维护的 data/xigou-projects.json）。
+export async function listProjects() {
+  const db = getPool();
+  const [rows] = await db.query(
+    `SELECT id, name, status, priority,
+       DATE_FORMAT(last_update, '%Y-%m-%d') AS lastUpdate,
+       next_milestone AS nextMilestone,
+       DATE_FORMAT(next_milestone_date, '%Y-%m-%d') AS nextMilestoneDate,
+       note, owner_phone AS ownerPhone, created_at AS createdAt, updated_at AS updatedAt
+     FROM projects
+     ORDER BY FIELD(status, 'active', 'paused', 'archived') ASC, updated_at DESC`
+  );
+  return rows.map(mapProjectRow);
+}
+
+export async function createProject(value, actorUserId = null) {
+  const project = normalizeProjectInput(value);
+  const db = getPool();
+  try {
+    const [result] = await db.query(
+      `INSERT INTO projects (name, status, priority, last_update, next_milestone, next_milestone_date, note, owner_phone, created_by, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [project.name, project.status, project.priority, project.lastUpdate, project.nextMilestone, project.nextMilestoneDate, project.note, project.ownerPhone, actorUserId, actorUserId]
+    );
+    const [rows] = await db.query('SELECT id, name, status, priority, DATE_FORMAT(last_update,"%Y-%m-%d") AS lastUpdate, next_milestone AS nextMilestone, DATE_FORMAT(next_milestone_date,"%Y-%m-%d") AS nextMilestoneDate, note, owner_phone AS ownerPhone, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE id=?', [result.insertId]);
+    return mapProjectRow(rows[0]);
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') throw new Error('已经有同名项目了。');
+    throw error;
+  }
+}
+
+export async function updateProject(projectId, value, actorUserId = null) {
+  const project = normalizeProjectInput(value);
+  const db = getPool();
+  try {
+    const [result] = await db.query(
+      `UPDATE projects SET name=?, status=?, priority=?, last_update=?, next_milestone=?, next_milestone_date=?, note=?, owner_phone=?, updated_by=?
+       WHERE id=?`,
+      [project.name, project.status, project.priority, project.lastUpdate, project.nextMilestone, project.nextMilestoneDate, project.note, project.ownerPhone, actorUserId, projectId]
+    );
+    if (result.affectedRows === 0) return null;
+    const [rows] = await db.query('SELECT id, name, status, priority, DATE_FORMAT(last_update,"%Y-%m-%d") AS lastUpdate, next_milestone AS nextMilestone, DATE_FORMAT(next_milestone_date,"%Y-%m-%d") AS nextMilestoneDate, note, owner_phone AS ownerPhone, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE id=?', [projectId]);
+    return mapProjectRow(rows[0]);
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') throw new Error('已经有同名项目了。');
+    throw error;
+  }
+}
+
+export async function deleteProject(projectId) {
+  const db = getPool();
+  const [result] = await db.query('DELETE FROM projects WHERE id = ?', [projectId]);
   return result.affectedRows > 0;
 }
 
@@ -1064,6 +1200,23 @@ async function ensurePersonalCredentialColumns(db) {
     await db.query(
       'ALTER TABLE personal_credentials ADD INDEX idx_personal_credentials_user_favorite (user_id, is_favorite, updated_at)'
     );
+  }
+}
+
+async function ensureSsoTicketColumns(db) {
+  const [columns] = await db.query(
+    `SELECT COLUMN_NAME AS columnName
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sso_tickets'`
+  );
+  const existingColumns = new Set(columns.map((column) => column.columnName));
+  const columnSql = [
+    ['user_id', 'ALTER TABLE sso_tickets ADD COLUMN user_id BIGINT UNSIGNED NULL AFTER target_url'],
+    ['username', "ALTER TABLE sso_tickets ADD COLUMN username VARCHAR(160) NOT NULL DEFAULT '' AFTER user_id"],
+    ['user_role', "ALTER TABLE sso_tickets ADD COLUMN user_role VARCHAR(32) NOT NULL DEFAULT '' AFTER user_nick"]
+  ];
+  for (const [columnName, sql] of columnSql) {
+    if (!existingColumns.has(columnName)) await db.query(sql);
   }
 }
 

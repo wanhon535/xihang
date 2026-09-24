@@ -6,7 +6,8 @@
 //   node scripts/xigou-supervisor-brief.mjs [选项]
 //
 // 选项：
-//   --data=<path>      项目数据文件路径，默认 data/xigou-projects.json
+//   --data=<path>      改用本地 JSON 文件作为项目数据源（离线测试用）；不传则从数据库的
+//                       项目管理模块读取，和管理中枢“项目管理”面板、数据大屏共用同一份数据
 //   --date=<YYYY-MM-DD> 以指定日期作为“今天”，默认取系统当前日期，便于测试
 //   --send-sms         真正发送停滞预警短信（需配置短信网关环境变量），默认只是预演不发送
 //   --send-dingtalk    真正发送钉钉工作通知（需配置钉钉应用环境变量），默认只是预演不发送
@@ -41,7 +42,7 @@ function parseArgs(argv) {
   return args;
 }
 
-async function loadProjects(dataPath) {
+async function loadProjectsFromFile(dataPath) {
   const raw = await readFile(dataPath, 'utf8');
   const parsed = JSON.parse(raw);
   const list = Array.isArray(parsed) ? parsed : parsed.projects;
@@ -49,6 +50,22 @@ async function loadProjects(dataPath) {
     throw new Error(`项目数据文件格式不对：${dataPath} 需要是数组，或包含 projects 数组字段。`);
   }
   return list;
+}
+
+// classifyProjects() speaks the original data/xigou-projects.json field names
+// (snake_case); the projects table (and its admin CRUD) uses camelCase like the
+// rest of the REST API. This adapts one to the other without touching either.
+function toClassifiableProject(row) {
+  return {
+    name: row.name,
+    status: row.status,
+    priority: row.priority,
+    last_update: row.lastUpdate,
+    next_milestone: row.nextMilestone,
+    next_milestone_date: row.nextMilestoneDate,
+    note: row.note,
+    owner_phone: row.ownerPhone
+  };
 }
 
 function renderMarkdown(date, brief) {
@@ -79,10 +96,12 @@ function renderMarkdown(date, brief) {
   return lines.join('\n');
 }
 
-// SMS/DingTalk credentials can live in the admin console (管理中枢 → 自动化通知,
-// encrypted at rest) or in .env; the DB copy wins when both are set. DB access is
-// best-effort: if MySQL isn't reachable here, silently fall back to .env alone.
-async function loadRuntimeConfig() {
+// One shared DB session for the whole run (db.js's pool is a module-level
+// singleton — opening/closing it more than once per process leaves the second
+// user holding a dead pool). SMS/DingTalk config is best-effort and falls back
+// to .env if MySQL isn't reachable; the project list is not optional unless
+// --data was given, so its failure is surfaced to the caller.
+async function loadFromDatabase({ needProjects }) {
   const config = {
     sms: {
       provider: process.env.SMS_PROVIDER || 'aliyun',
@@ -99,6 +118,8 @@ async function loadRuntimeConfig() {
       deptIds: process.env.DINGTALK_NOTIFY_DEPT_IDS || ''
     }
   };
+  let projects = null;
+  let projectsError = null;
   let pool;
   try {
     const dbModule = await import('../backend/src/db.js');
@@ -114,12 +135,17 @@ async function loadRuntimeConfig() {
     if (settings.dingtalkNotifyUserIds) config.dingtalk.userIds = settings.dingtalkNotifyUserIds;
     if (settings.dingtalkNotifyDeptIds) config.dingtalk.deptIds = settings.dingtalkNotifyDeptIds;
     if (settings.dingtalkNotifyAppSecret) config.dingtalk.appSecret = await dbModule.getDecryptedSystemSetting('dingtalkNotifyAppSecret');
+    if (needProjects) {
+      const rows = await dbModule.listProjects();
+      projects = rows.map(toClassifiableProject);
+    }
   } catch (error) {
-    console.warn(`[配置] 未能从数据库读取管理中枢的自动化通知配置，回退到 .env：${error.message}`);
+    console.warn(`[配置] 未能连接数据库读取管理中枢的自动化通知配置，回退到 .env：${error.message}`);
+    if (needProjects) projectsError = error;
   } finally {
     await pool?.end().catch(() => {});
   }
-  return config;
+  return { config, projects, projectsError };
 }
 
 async function loadState(statePath) {
@@ -256,7 +282,6 @@ async function sendDingtalkNotification({ dingtalk, markdown, dryRun }) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const dataPath = path.resolve(ROOT, args.dataPath || 'data/xigou-projects.json');
   const outDir = path.resolve(ROOT, args.outDir || 'data/reports');
   const statePath = path.resolve(ROOT, 'data/xigou-supervisor-state.json');
 
@@ -264,8 +289,12 @@ async function main() {
   if (todayTs === null) throw new Error(`--date 格式不对：${args.date}，需要 YYYY-MM-DD`);
   const date = formatDate(todayTs);
 
-  const config = await loadRuntimeConfig();
-  const projects = await loadProjects(dataPath);
+  const useFile = Boolean(args.dataPath);
+  const { config, projects: dbProjects, projectsError } = await loadFromDatabase({ needProjects: !useFile });
+  if (!useFile && projectsError) {
+    throw new Error(`无法从数据库读取项目数据（管理中枢 → 项目管理）：${projectsError.message}。也可以用 --data=<path> 指定本地 JSON 文件离线运行。`);
+  }
+  const projects = useFile ? await loadProjectsFromFile(path.resolve(ROOT, args.dataPath)) : dbProjects;
   const brief = classifyProjects(projects, todayTs, { maxTodayTasks: MAX_TODAY_TASKS });
   const jsonOutput = { date, stalled: brief.stalled, today_tasks: brief.todayTasks, backlog: brief.backlog, data_issues: brief.dataIssues };
   const markdown = renderMarkdown(date, brief);

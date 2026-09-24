@@ -1,18 +1,20 @@
 import express from 'express';
-import { readFile } from 'node:fs/promises';
 import { classifyProjects } from './project-status.js';
 
-const fail = (message, status = 400) => Object.assign(new Error(message), { status });
-
-async function loadProjects(projectsPath) {
-  try {
-    const raw = await readFile(projectsPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : (parsed.projects || []);
-  } catch (error) {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  }
+// classifyProjects() speaks the original data/xigou-projects.json field names
+// (snake_case); the projects table (and its admin CRUD) uses camelCase like the
+// rest of the REST API. This adapts one to the other without touching either.
+function toClassifiableProject(row) {
+  return {
+    name: row.name,
+    status: row.status,
+    priority: row.priority,
+    last_update: row.lastUpdate,
+    next_milestone: row.nextMilestone,
+    next_milestone_date: row.nextMilestoneDate,
+    note: row.note,
+    owner_phone: row.ownerPhone
+  };
 }
 
 async function loadCostSummary(db) {
@@ -29,9 +31,10 @@ async function loadCostSummary(db) {
 }
 
 // This dashboard is deliberately read-only and admin-scoped: it aggregates
-// data that already exists (cost ledger, 汐构监督agent's project list) rather
-// than owning any new source of truth.
-export function createDashboardRouter({ db, requireLogin, requireAdmin, projectsPath }) {
+// data that already exists (cost ledger, the projects table shared with the
+// admin console's "项目管理" panel and the 汐构监督agent script) rather than
+// owning any new source of truth.
+export function createDashboardRouter({ db, requireLogin, requireAdmin, listProjects }) {
   const router = express.Router();
   router.use(requireLogin, requireAdmin);
   // Existing admin middleware has legacy nickname allowlists; this dashboard exposes
@@ -41,7 +44,8 @@ export function createDashboardRouter({ db, requireLogin, requireAdmin, projects
   const route = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 
   router.get('/screen', route(async (req, res) => {
-    const [cost, allProjects] = await Promise.all([loadCostSummary(db), loadProjects(projectsPath)]);
+    const [cost, projectRows] = await Promise.all([loadCostSummary(db), listProjects()]);
+    const allProjects = projectRows.map(toClassifiableProject);
     const todayTs = Date.UTC(...new Date().toISOString().slice(0, 10).split('-').map((v, i) => i === 1 ? Number(v) - 1 : Number(v)));
     const brief = classifyProjects(allProjects, todayTs);
     const activeCount = allProjects.filter(p => p.status === 'active').length;
@@ -72,5 +76,3 @@ export function createDashboardRouter({ db, requireLogin, requireAdmin, projects
 
   return router;
 }
-
-export { loadProjects };
