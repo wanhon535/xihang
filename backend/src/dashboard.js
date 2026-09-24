@@ -1,22 +1,6 @@
 import express from 'express';
 import { classifyProjects } from './project-status.js';
 
-// classifyProjects() speaks the original data/xigou-projects.json field names
-// (snake_case); the projects table (and its admin CRUD) uses camelCase like the
-// rest of the REST API. This adapts one to the other without touching either.
-function toClassifiableProject(row) {
-  return {
-    name: row.name,
-    status: row.status,
-    priority: row.priority,
-    last_update: row.lastUpdate,
-    next_milestone: row.nextMilestone,
-    next_milestone_date: row.nextMilestoneDate,
-    note: row.note,
-    owner_phone: row.ownerPhone
-  };
-}
-
 async function loadCostSummary(db) {
   const [[totals]] = await db.query(`SELECT
     CAST(COALESCE(SUM(amount_cents),0) AS CHAR) AS totalCents,
@@ -44,8 +28,7 @@ export function createDashboardRouter({ db, requireLogin, requireAdmin, listProj
   const route = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 
   router.get('/screen', route(async (req, res) => {
-    const [cost, projectRows] = await Promise.all([loadCostSummary(db), listProjects()]);
-    const allProjects = projectRows.map(toClassifiableProject);
+    const [cost, allProjects] = await Promise.all([loadCostSummary(db), listProjects()]);
     const todayTs = Date.UTC(...new Date().toISOString().slice(0, 10).split('-').map((v, i) => i === 1 ? Number(v) - 1 : Number(v)));
     const brief = classifyProjects(allProjects, todayTs);
     const activeCount = allProjects.filter(p => p.status === 'active').length;
@@ -61,8 +44,8 @@ export function createDashboardRouter({ db, requireLogin, requireAdmin, listProj
         items: brief.enriched.map(e => ({
           name: e.project.name,
           priority: e.project.priority,
-          lastUpdate: e.project.last_update || null,
-          nextMilestone: e.project.next_milestone || null,
+          lastUpdate: e.project.lastUpdate || null,
+          nextMilestone: e.project.nextMilestone || null,
           note: e.project.note || '',
           staleDays: e.staleDays,
           isStalled: e.isStalled,

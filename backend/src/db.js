@@ -652,7 +652,14 @@ const PROJECT_PRIORITIES = new Set(['P0', 'P1', 'P2', 'P3']);
 function normalizeProjectDate(value, label) {
   if (value == null || value === '') return null;
   const text = String(value).trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
+  // Date.parse silently rolls invalid calendar dates forward (e.g. 2026-02-30
+  // becomes 2026-03-02) instead of failing, so re-format the parsed date and
+  // compare it back to the input to actually catch that case.
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(text) ||
+    !Number.isFinite(Date.parse(`${text}T00:00:00Z`)) ||
+    new Date(`${text}T00:00:00Z`).toISOString().slice(0, 10) !== text
+  ) {
     throw new Error(`${label}格式不对，需要 YYYY-MM-DD。`);
   }
   return text;
@@ -696,18 +703,24 @@ function mapProjectRow(row) {
   };
 }
 
+const PROJECT_SELECT_SQL = `SELECT id, name, status, priority,
+       DATE_FORMAT(last_update, '%Y-%m-%d') AS lastUpdate,
+       next_milestone AS nextMilestone,
+       DATE_FORMAT(next_milestone_date, '%Y-%m-%d') AS nextMilestoneDate,
+       note, owner_phone AS ownerPhone, created_at AS createdAt, updated_at AS updatedAt
+     FROM projects`;
+
+async function findProjectById(db, projectId) {
+  const [rows] = await db.query(`${PROJECT_SELECT_SQL} WHERE id=?`, [projectId]);
+  return rows[0] ? mapProjectRow(rows[0]) : null;
+}
+
 // 管理中枢的“项目管理”面板、成本台账的项目下拉、数据大屏和汐构监督agent
 // 共用这一份项目数据（取代早期手动维护的 data/xigou-projects.json）。
 export async function listProjects() {
   const db = getPool();
   const [rows] = await db.query(
-    `SELECT id, name, status, priority,
-       DATE_FORMAT(last_update, '%Y-%m-%d') AS lastUpdate,
-       next_milestone AS nextMilestone,
-       DATE_FORMAT(next_milestone_date, '%Y-%m-%d') AS nextMilestoneDate,
-       note, owner_phone AS ownerPhone, created_at AS createdAt, updated_at AS updatedAt
-     FROM projects
-     ORDER BY FIELD(status, 'active', 'paused', 'archived') ASC, updated_at DESC`
+    `${PROJECT_SELECT_SQL} ORDER BY FIELD(status, 'active', 'paused', 'archived') ASC, updated_at DESC`
   );
   return rows.map(mapProjectRow);
 }
@@ -721,8 +734,7 @@ export async function createProject(value, actorUserId = null) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [project.name, project.status, project.priority, project.lastUpdate, project.nextMilestone, project.nextMilestoneDate, project.note, project.ownerPhone, actorUserId, actorUserId]
     );
-    const [rows] = await db.query('SELECT id, name, status, priority, DATE_FORMAT(last_update,"%Y-%m-%d") AS lastUpdate, next_milestone AS nextMilestone, DATE_FORMAT(next_milestone_date,"%Y-%m-%d") AS nextMilestoneDate, note, owner_phone AS ownerPhone, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE id=?', [result.insertId]);
-    return mapProjectRow(rows[0]);
+    return await findProjectById(db, result.insertId);
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') throw new Error('已经有同名项目了。');
     throw error;
@@ -739,8 +751,7 @@ export async function updateProject(projectId, value, actorUserId = null) {
       [project.name, project.status, project.priority, project.lastUpdate, project.nextMilestone, project.nextMilestoneDate, project.note, project.ownerPhone, actorUserId, projectId]
     );
     if (result.affectedRows === 0) return null;
-    const [rows] = await db.query('SELECT id, name, status, priority, DATE_FORMAT(last_update,"%Y-%m-%d") AS lastUpdate, next_milestone AS nextMilestone, DATE_FORMAT(next_milestone_date,"%Y-%m-%d") AS nextMilestoneDate, note, owner_phone AS ownerPhone, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE id=?', [projectId]);
-    return mapProjectRow(rows[0]);
+    return await findProjectById(db, projectId);
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') throw new Error('已经有同名项目了。');
     throw error;
@@ -930,21 +941,17 @@ export async function getDecryptedSystemSetting(key) {
   return decryptSystemSecret(rows[0].settingValue);
 }
 
+const SYSTEM_SECRET_AAD = 'system-settings';
+
 function encryptSystemSecret(value) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', getVaultKey(), iv);
-  cipher.setAAD(Buffer.from('system-settings'));
-  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
-  return JSON.stringify({ c: encrypted.toString('base64'), iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64') });
+  const { cipherText, iv, tag } = encryptAesGcm(SYSTEM_SECRET_AAD, value);
+  return JSON.stringify({ c: cipherText, iv, tag });
 }
 
 function decryptSystemSecret(stored) {
   try {
     const { c, iv, tag } = JSON.parse(stored);
-    const decipher = crypto.createDecipheriv('aes-256-gcm', getVaultKey(), Buffer.from(iv, 'base64'));
-    decipher.setAAD(Buffer.from('system-settings'));
-    decipher.setAuthTag(Buffer.from(tag, 'base64'));
-    return Buffer.concat([decipher.update(Buffer.from(c, 'base64')), decipher.final()]).toString('utf8');
+    return decryptAesGcm(SYSTEM_SECRET_AAD, { cipherText: c, iv, tag });
   } catch {
     throw new Error('配置项无法解密，请确认 VAULT_ENCRYPTION_KEY 未变更。');
   }
@@ -1693,13 +1700,15 @@ function isCredentialEndpoint(value) {
   return endpointPattern.test(text);
 }
 
-function encryptVaultSecret(userId, value) {
+// Shared AES-256-GCM primitive: every encrypted-at-rest field in this app (vault
+// credentials, automation-panel secrets) goes through this one implementation,
+// keyed off getVaultKey() and scoped by an AAD the caller picks (user id for
+// per-user vault records, a fixed string for global settings).
+function encryptAesGcm(aad, value) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', getVaultKey(), iv);
-  cipher.setAAD(Buffer.from(String(userId)));
-
+  cipher.setAAD(Buffer.from(String(aad)));
   const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
-
   return {
     cipherText: encrypted.toString('base64'),
     iv: iv.toString('base64'),
@@ -1707,20 +1716,20 @@ function encryptVaultSecret(userId, value) {
   };
 }
 
+function decryptAesGcm(aad, { cipherText, iv, tag }) {
+  const decipher = crypto.createDecipheriv('aes-256-gcm', getVaultKey(), Buffer.from(iv, 'base64'));
+  decipher.setAAD(Buffer.from(String(aad)));
+  decipher.setAuthTag(Buffer.from(tag, 'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(cipherText, 'base64')), decipher.final()]).toString('utf8');
+}
+
+function encryptVaultSecret(userId, value) {
+  return encryptAesGcm(userId, value);
+}
+
 function decryptVaultSecret(userId, record) {
   try {
-    const decipher = crypto.createDecipheriv(
-      'aes-256-gcm',
-      getVaultKey(),
-      Buffer.from(record.passwordIv, 'base64')
-    );
-    decipher.setAAD(Buffer.from(String(userId)));
-    decipher.setAuthTag(Buffer.from(record.passwordTag, 'base64'));
-
-    return Buffer.concat([
-      decipher.update(Buffer.from(record.passwordCipher, 'base64')),
-      decipher.final()
-    ]).toString('utf8');
+    return decryptAesGcm(userId, { cipherText: record.passwordCipher, iv: record.passwordIv, tag: record.passwordTag });
   } catch {
     throw new Error('密码记录无法解密，请确认 VAULT_ENCRYPTION_KEY 与创建记录时一致。');
   }
