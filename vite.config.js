@@ -12,7 +12,8 @@ export default defineConfig({
         login: resolve(__dirname, 'frontend/login.html'),
         changePassword: resolve(__dirname, 'frontend/change-password.html'),
         admin: resolve(__dirname, 'frontend/admin.html'),
-        vault: resolve(__dirname, 'frontend/vault.html')
+        vault: resolve(__dirname, 'frontend/vault.html'),
+        ledger: resolve(__dirname, 'frontend/ledger.html')
       }
     }
   }

@@ -430,7 +430,7 @@ function getDingTalkNativeRedirect(data = {}) {
     return '';
   }
 
-  const target = new URL(`${API_BASE_URL}/api/auth/dingtalk/callback`);
+  const target = new URL(`${API_BASE_URL}/api/auth/dingtalk/callback`, window.location.origin);
   target.searchParams.set('code', String(authCode));
   target.searchParams.set('authCode', String(authCode));
   if (state) {
@@ -632,4 +632,3 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
-

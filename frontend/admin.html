@@ -5,38 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>管理中枢 - 汐航</title>
     <link rel="stylesheet" href="/src/styles/styles.css" />
+    <link rel="stylesheet" href="/src/styles/admin-layout.css" />
+
   </head>
-  <body class="console-page admin-page admin-reference-page">
+  <body class="console-page vben-shell admin-page admin-reference-page">
     <aside id="sidebar" class="side-rail admin-sidebar" aria-label="管理导航">
       <a id="sidebar-logo" class="side-logo" href="/" aria-label="汐航">
         <span>汐</span>
         <strong>汐航</strong>
       </a>
       <nav id="sidebar-menu" class="side-nav admin-tree-nav">
-        <a href="/"><b>台</b><span>工作台</span></a>
-        <a href="/vault.html"><b>钥</b><span>星钥库</span></a>
+        <a href="/"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6"/></svg></b><span>工作台</span></a>
+        <a href="/vault.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.5 12.5 8-8 2 2-2 2 2 2-3 3-2-2-2 2"/></svg></b><span>星钥库</span></a>
+        <a href="/ledger.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></b><span>成本台账</span></a>
         <div id="nav-operations" class="nav-group">
           <button id="nav-operations-toggle" class="nav-group-title" type="button">运营管理</button>
           <div id="nav-operations-items" class="nav-group-items">
-            <a id="nav-users" class="active" href="#users" data-admin-panel="users"><b>用</b><span>用户管理</span></a>
-            <a id="nav-roles" href="#roles" data-admin-panel="roles"><b>角</b><span>角色管理</span></a>
-            <a id="nav-audit" href="#audit" data-admin-panel="audit"><b>审</b><span>日志审计</span></a>
+            <a id="nav-users" class="active" href="#users" data-admin-panel="users"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20v-1.5A5.5 5.5 0 0 1 9 13h1M16 11a3 3 0 1 0 0-6M15 14h2a4 4 0 0 1 4 4v2h-8v-2a4 4 0 0 1 2-3.5"/></svg></b><span>用户管理</span></a>
+            <a id="nav-sites" href="#sites" data-admin-panel="sites"><b><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></b><span>站点矩阵</span></a>
+            <a id="nav-roles" href="#roles" data-admin-panel="roles"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7.5 12 12 4 7.5 12 3ZM4 12l8 4.5 8-4.5M4 16.5 12 21l8-4.5"/></svg></b><span>角色管理</span></a>
+            <a id="nav-audit" href="#audit" data-admin-panel="audit"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5M8 10.5l1.7 1.7 3.3-3.4"/></svg></b><span>日志审计</span></a>
           </div>
         </div>
         <div id="nav-config" class="nav-group">
           <button id="nav-config-toggle" class="nav-group-title" type="button">系统配置</button>
           <div id="nav-config-items" class="nav-group-items">
-            <a id="nav-system-config" href="#settings" data-admin-panel="settings"><b>全</b><span>全局设置</span></a>
-            <a id="nav-email" href="#email" data-admin-panel="email"><b>邮</b><span>邮件服务</span></a>
-            <a id="nav-security" href="#security" data-admin-panel="security"><b>安</b><span>安全策略</span></a>
+            <a id="nav-system-config" href="#settings" data-admin-panel="settings"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3.5 9h17M3.5 15h17M12 3c2 2.4 3 5.4 3 9s-1 6.6-3 9c-2-2.4-3-5.4-3-9s1-6.6 3-9Z"/></svg></b><span>全局设置</span></a>
+            <a id="nav-email" href="#email" data-admin-panel="email"><b><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></b><span>邮件服务</span></a>
+            <a id="nav-security" href="#security" data-admin-panel="security"><b><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3M12 14v3"/></svg></b><span>安全策略</span></a>
           </div>
         </div>
         <div id="nav-ops" class="nav-group">
           <button id="nav-ops-toggle" class="nav-group-title" type="button">运维</button>
           <div id="nav-ops-items" class="nav-group-items">
-            <a id="nav-monitor" href="#monitor" data-admin-panel="monitor"><b>监</b><span>系统监控</span></a>
-            <a id="nav-operation-logs" href="#logs" data-admin-panel="logs"><b>志</b><span>操作日志</span></a>
-            <a id="nav-backup" href="#backup" data-admin-panel="backup"><b>备</b><span>数据备份</span></a>
+            <a id="nav-monitor" href="#monitor" data-admin-panel="monitor"><b><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M6 12l3-3 3 2 4-4 2 1"/></svg></b><span>系统监控</span></a>
+            <a id="nav-operation-logs" href="#logs" data-admin-panel="logs"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg></b><span>操作日志</span></a>
+            <a id="nav-backup" href="#backup" data-admin-panel="backup"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5M3 7v14h14"/></svg></b><span>数据备份</span></a>
           </div>
         </div>
       </nav>
@@ -51,7 +55,7 @@
         <div>
           <p class="eyebrow">ADMIN CONSOLE</p>
           <h1 id="admin-title">管理中枢</h1>
-          <p class="topbar-subtitle">管理员创建成员、分配角色、维护站点矩阵，并追踪关键操作。</p>
+          <p class="topbar-subtitle">管理团队成员、应用权限与系统设置。</p>
         </div>
         <div class="console-user">
           <button id="logoutBtn" type="button">退出</button>
@@ -62,34 +66,34 @@
         <article>
           <span>总用户</span>
           <strong id="stat-total-users">0</strong>
-          <small>Members</small>
+          <small>团队账号总量</small>
         </article>
         <article>
           <span>在线用户</span>
           <strong id="stat-online-users">-</strong>
-          <small>Online</small>
+          <small>最近 15 分钟登录</small>
         </article>
         <article>
           <span>今日新增</span>
           <strong id="stat-new-users">-</strong>
-          <small>Today</small>
+          <small>今日创建账号</small>
         </article>
         <article>
           <span>健康度</span>
           <strong id="stat-health">100</strong>
-          <small>Health</small>
+          <small>核心服务状态</small>
         </article>
       </section>
 
       <section class="command-strip compact-strip admin-command">
         <div>
           <p>运营管理</p>
-          <h2>成员账号、权限、站点和审计集中治理，普通成员不开放自助注册。</h2>
+          <h2>选择管理分类，快速处理团队日常事务。</h2>
         </div>
         <div class="switch-tabs" role="tablist" aria-label="管理视图">
-          <button class="admin-tab active" type="button" data-admin-panel="users">用户管理</button>
-          <button class="admin-tab" type="button" data-admin-panel="sites">站点矩阵</button>
-          <button class="admin-tab" type="button" data-admin-panel="audit">日志审计</button>
+          <button role="tab" class="admin-tab active" type="button" data-admin-panel="users">用户管理</button>
+          <button role="tab" class="admin-tab" type="button" data-admin-panel="sites">站点矩阵</button>
+          <button role="tab" class="admin-tab" type="button" data-admin-panel="audit">日志审计</button>
         </div>
       </section>
 
@@ -105,16 +109,23 @@
             <input id="admin-search" autocomplete="off" placeholder="按姓名或账号搜索" />
           </label>
         </div>
+        <div class="member-filterbar">
+          <label>角色<select id="memberRoleFilter"><option value="">全部角色</option><option value="admin">管理员</option><option value="member">普通成员</option></select></label>
+          <label>状态<select id="memberStatusFilter"><option value="">全部状态</option><option value="active">已启用</option><option value="disabled">已停用</option></select></label>
+          <span id="memberResultCount" aria-live="polite"></span>
+        </div>
+        <details class="create-member-panel"><summary>新增团队成员 <span>填写账号信息并分配角色</span></summary>
         <form id="createUserForm" class="create-user-form">
-          <input id="newUsername" class="field-input" placeholder="账号，例如 zhangsan" autocomplete="off" />
-          <input id="newNick" class="field-input" placeholder="姓名/昵称" autocomplete="off" />
-          <input id="newPassword" class="field-input" type="password" placeholder="初始密码，至少 8 位" autocomplete="new-password" />
-          <select id="newRole" class="field-input">
+          <label class="field"><span>登录账号</span><input id="newUsername" class="field-input" placeholder="账号，例如 zhangsan" autocomplete="off" /></label>
+          <label class="field"><span>姓名 / 昵称</span><input id="newNick" class="field-input" placeholder="姓名/昵称" autocomplete="off" /></label>
+          <label class="field"><span>初始密码</span><input id="newPassword" class="field-input" type="password" placeholder="初始密码，至少 8 位" autocomplete="new-password" /></label>
+          <label class="field"><span>账号角色</span><select id="newRole" class="field-input">
             <option value="member">普通成员</option>
             <option value="admin">管理员</option>
-          </select>
+          </select></label>
           <button class="primary-btn" type="submit">创建用户</button>
         </form>
+        </details>
         <div class="admin-table-head">
           <span>ID / 姓名</span>
           <span>昵称</span>
@@ -123,7 +134,7 @@
           <span>星钥</span>
           <span>操作</span>
         </div>
-        <div id="userList" class="user-list">正在加载用户...</div>
+        <div id="userList" class="user-list"><div class="loading-card"><span class="state-icon" aria-hidden="true">◌</span><strong>正在加载成员</strong><small>正在同步账号与权限信息。</small></div></div>
         <p id="userStatus" class="hint">账号创建后会自动启用首次改密。</p>
       </section>
 
@@ -139,7 +150,7 @@
             <button id="saveBtn" class="primary-btn" type="button">保存配置</button>
           </div>
         </div>
-        <div id="adminEditor" class="admin-editor">正在加载站点...</div>
+        <div id="adminEditor" class="admin-editor"><div class="loading-card"><span class="state-icon" aria-hidden="true">◌</span><strong>正在加载站点配置</strong><small>正在读取工作台入口和分组。</small></div></div>
         <p id="saveStatus" class="hint">数据源：MySQL</p>
       </section>
 
@@ -163,7 +174,7 @@
           </div>
           <button id="refreshAuditBtn" class="plain-btn" type="button">刷新日志</button>
         </div>
-        <div id="auditList" class="audit-list">正在加载日志...</div>
+        <div id="auditList" class="audit-list"><div class="loading-card"><span class="state-icon" aria-hidden="true">◌</span><strong>正在加载审计记录</strong><small>正在读取最近的管理操作。</small></div></div>
       </section>
 
       <section id="settingsPanel" class="board admin-board admin-panel hidden" data-panel="settings">
@@ -273,7 +284,7 @@
           </div>
           <button id="refreshLogsBtn" class="plain-btn" type="button">刷新操作日志</button>
         </div>
-        <div id="operationLogList" class="audit-list">正在加载日志...</div>
+        <div id="operationLogList" class="audit-list"><div class="loading-card"><span class="state-icon" aria-hidden="true">◌</span><strong>正在加载操作日志</strong><small>正在读取最近的管理操作。</small></div></div>
       </section>
 
       <section id="backupPanel" class="board admin-board admin-panel hidden" data-panel="backup">

@@ -1,0 +1,62 @@
+      <section id="workspaceThemePanel" class="workspace-theme-panel hidden" aria-label="工作台外观设置">
+        <div class="theme-panel-head">
+          <div>
+            <p class="panel-label">Workspace Style</p>
+            <h2>个人外观</h2>
+            <p>配色应用于工作台、导航栏、星钥库和管理页面，只对当前账号生效。</p>
+          </div>
+          <button id="themePanelCloseBtn" class="plain-btn small" type="button">收起</button>
+        </div>
+
+        <div class="theme-controls-grid">
+          <label class="field">
+            <span>背景类型</span>
+            <select id="workspaceThemeModeInput" class="field-input">
+              <option value="gradient">渐变</option>
+              <option value="solid">纯色</option>
+              <option value="image">图片</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>纯色背景</span>
+            <input id="workspaceSolidColorInput" class="field-input color-field" type="color" value="#08090a" />
+          </label>
+          <label class="field">
+            <span>渐变起点</span>
+            <input id="workspaceGradientStartInput" class="field-input color-field" type="color" value="#08090a" />
+          </label>
+          <label class="field">
+            <span>渐变终点</span>
+            <input id="workspaceGradientEndInput" class="field-input color-field" type="color" value="#0f2f2b" />
+          </label>
+          <label class="field">
+            <span>渐变角度</span>
+            <input id="workspaceGradientAngleInput" class="field-input" type="number" min="0" max="360" value="135" />
+          </label>
+          <label class="field">
+            <span>暗化强度</span>
+            <input id="workspaceOverlayInput" class="range-input" type="range" min="0" max="80" value="28" />
+          </label>
+          <label class="field theme-image-field">
+            <span>上传背景图</span>
+            <input id="workspaceBackgroundInput" class="field-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+          </label>
+          <div class="theme-preset-row" aria-label="背景预设">
+            <button id="themePresetDeepBtn" class="plain-btn small" type="button" data-theme-preset="deep">深海</button>
+            <button id="themePresetAuroraBtn" class="plain-btn small" type="button" data-theme-preset="aurora">极光</button>
+            <button id="themePresetGraphiteBtn" class="plain-btn small" type="button" data-theme-preset="graphite">石墨</button>
+          </div>
+        </div>
+
+        <div class="theme-action-row">
+          <div id="workspaceThemePreview" class="theme-preview-card">
+            <span>Preview</span>
+            <strong>汐航工作台</strong>
+          </div>
+          <div class="row-actions">
+            <button id="themeResetBtn" class="plain-btn" type="button">恢复默认</button>
+            <button id="themeSaveBtn" class="primary-btn" type="button">保存外观</button>
+          </div>
+        </div>
+        <p id="themeStatus" class="hint"></p>
+      </section>

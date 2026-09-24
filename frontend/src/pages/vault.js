@@ -1,4 +1,6 @@
-﻿import { api, logout, redirectToLogin, requireUser } from '../api.js';
+import { loadAppearance } from '../appearance.js';
+import { setWorkspaceUser } from '../shell.js';
+import { api, logout, redirectToLogin, requireUser } from '../api.js';
 
 const userName = document.querySelector('#userName');
 const logoutBtn = document.querySelector('#logoutBtn');
@@ -52,7 +54,15 @@ let editingId = null;
 let lastGeneratedPassword = '';
 
 logoutBtn.addEventListener('click', logout);
-newCredentialBtn.addEventListener('click', startCreate);
+const credentialDialog = document.querySelector('#create-key-modal');
+function openCredentialEditor() {
+  if (!credentialDialog.open) credentialDialog.showModal();
+}
+newCredentialBtn.addEventListener('click', () => { startCreate(); openCredentialEditor(); });
+function clearEditorSecret() { passwordInput.value = ''; passwordInput.type = 'password'; }
+document.querySelector('#closeCredentialBtn').addEventListener('click', () => { clearEditorSecret(); credentialDialog.close(); });
+credentialDialog.addEventListener('cancel', clearEditorSecret);
+credentialDialog.addEventListener('close', clearEditorSecret);
 clearFormBtn.addEventListener('click', startCreate);
 deleteCredentialBtn.addEventListener('click', deleteCurrentCredential);
 searchInput.addEventListener('input', renderCredentials);
@@ -79,6 +89,8 @@ async function init() {
       return;
     }
 
+    setWorkspaceUser(user);
+    void loadAppearance(user);
     userName.textContent = user.nick || user.username || '汐航用户';
     document.querySelectorAll('.admin-only').forEach((node) => node.classList.toggle('hidden', user.role !== 'admin'));
     startCreate();
@@ -101,10 +113,10 @@ async function loadCredentials() {
     vaultTotalKeys.textContent = String(credentials.length);
   }
   if (vaultActiveKeys) {
-    vaultActiveKeys.textContent = String(credentials.length);
+    vaultActiveKeys.textContent = String(getCategories().length);
   }
   if (vaultExpiringKeys) {
-    vaultExpiringKeys.textContent = '0';
+    vaultExpiringKeys.textContent = String(credentials.filter(item => item.isFavorite).length);
   }
   renderCategoryOptions();
   renderCredentials();
@@ -135,6 +147,7 @@ function renderCategoryOptions() {
 
 function renderCredentials() {
   const visibleCredentials = getVisibleCredentials();
+  credentialCount.textContent = `${visibleCredentials.length} / ${credentials.length} 条记录`;
 
   credentialList.innerHTML = '';
 
@@ -231,7 +244,7 @@ function renderCredentialCard(credential) {
   const tagLine = el('div', 'tags credential-tags');
   tagLine.append(el('b', '', credential.category || '默认项目'));
   (credential.tags || []).forEach((tag) => tagLine.append(el('b', '', tag)));
-  content.append(titleRow, meta, tagLine);
+  content.append(titleRow, tagLine);
   main.append(badge, content);
 
   const actions = el('div', 'credential-actions');
@@ -301,7 +314,7 @@ function renderCredentialCard(credential) {
   });
 
   actions.append(editBtn, copyUserBtn, copyPasswordBtn, revealBtn, openBtn);
-  card.append(main, actions, secretBox);
+  card.append(main, meta, actions, secretBox);
 
   return card;
 }
@@ -333,6 +346,7 @@ function editCredential(id) {
   }
 
   editingId = id;
+  openCredentialEditor();
   formTitle.textContent = '编辑记录';
   titleInput.value = credential.title || '';
   usernameInput.value = credential.loginUsername || '';

@@ -1,4 +1,6 @@
-﻿import { api, logout, redirectToLogin, requireUser } from '../api.js';
+import { loadAppearance } from '../appearance.js';
+import { setWorkspaceUser } from '../shell.js';
+import { api, logout, redirectToLogin, requireUser } from '../api.js';
 
 const editor = document.querySelector('#adminEditor');
 const saveBtn = document.querySelector('#saveBtn');
@@ -80,6 +82,10 @@ addGroupBtn.addEventListener('click', () => {
 saveBtn.addEventListener('click', saveGroups);
 createUserForm.addEventListener('submit', createUser);
 adminSearch.addEventListener('input', renderUsers);
+const roleFilter = document.querySelector('#memberRoleFilter');
+const statusFilter = document.querySelector('#memberStatusFilter');
+roleFilter.addEventListener('change', renderUsers);
+statusFilter.addEventListener('change', renderUsers);
 settingsForm.addEventListener('submit', saveSettings);
 emailSettingsForm.addEventListener('submit', saveSettings);
 securitySettingsForm.addEventListener('submit', saveSettings);
@@ -92,10 +98,11 @@ settingFields.backupRetentionDays.addEventListener('change', () => saveSettingsF
 panelTriggers.forEach((trigger) => {
   trigger.addEventListener('click', (event) => {
     event.preventDefault();
-    showPanel(trigger.dataset.adminPanel);
+    showPanel(trigger.dataset.adminPanel, true);
   });
 });
 
+window.addEventListener('hashchange', () => showPanel(getInitialPanel()));
 init();
 
 async function init() {
@@ -108,6 +115,8 @@ async function init() {
       redirectToLogin('当前账号没有后台权限。');
       return;
     }
+    setWorkspaceUser(currentUser);
+    void loadAppearance(currentUser);
     userName.textContent = currentUser.nick || currentUser.username || '汐航管理员';
 
     const [overviewPayload, groupPayload, userPayload, settingsPayload, logPayload] = await Promise.all([
@@ -147,12 +156,23 @@ function getInitialPanel() {
   return panels.some((node) => node.dataset.panel === panel) ? panel : 'users';
 }
 
-function showPanel(panel) {
-  panels.forEach((node) => node.classList.toggle('hidden', node.dataset.panel !== panel));
-  panelTriggers.forEach((trigger) => trigger.classList.toggle('active', trigger.dataset.adminPanel === panel));
-  if (window.location.hash !== `#${panel}`) {
-    window.history.replaceState(null, '', `#${panel}`);
-  }
+function showPanel(panel, navigate = false) {
+  const activePanel = panels.find(node => node.dataset.panel === panel);
+  if (!activePanel) return;
+  panels.forEach(node => node.classList.toggle('hidden', node !== activePanel));
+  panelTriggers.forEach(trigger => {
+    const active = trigger.dataset.adminPanel === panel;
+    trigger.classList.toggle('active', active);
+    if (trigger.matches('a')) {
+      if (active) trigger.setAttribute('aria-current', 'page');
+      else trigger.removeAttribute('aria-current');
+    } else trigger.setAttribute('aria-selected', String(active));
+  });
+  document.querySelector('#admin-title').textContent = activePanel.querySelector('h2').textContent;
+  document.querySelector('.topbar-subtitle').textContent = activePanel.querySelector('.board-head p:last-child').textContent;
+  document.querySelector('#admin-stats').classList.toggle('hidden', panel !== 'users');
+  document.body.dataset.adminView = panel;
+  if (navigate && window.location.hash !== `#${panel}`) window.location.hash = panel;
 }
 
 async function refreshOverview() {
@@ -205,6 +225,7 @@ async function createUser(event) {
 
 function renderUsers() {
   const visibleUsers = getVisibleUsers();
+  document.querySelector("#memberResultCount").textContent = `显示 ${visibleUsers.length} / ${users.length} 位成员`;
 
   if (users.length === 0) {
     userList.innerHTML = '<div class="empty-card">还没有成员账号。创建后会出现在这里。</div>';
@@ -230,13 +251,9 @@ function renderUsers() {
 
 function getVisibleUsers() {
   const query = adminSearch.value.trim().toLowerCase();
-  if (!query) {
-    return users;
-  }
-
-  return users.filter((user) =>
-    [user.username, user.nick, user.role, user.status, user.authType].join(' ').toLowerCase().includes(query)
-  );
+  return users.filter(user => (!roleFilter.value || user.role === roleFilter.value) &&
+    (!statusFilter.value || user.status === statusFilter.value) &&
+    [user.username, user.nick, user.role, user.status, user.authType].join(' ').toLowerCase().includes(query));
 }
 
 function renderStats() {
@@ -395,12 +412,14 @@ function renderGroups() {
 
     const sites = el('div', 'site-editor-list');
     (group.sites || []).forEach((site, siteIndex) => {
-      const siteCard = el('div', 'site-editor');
-      const siteTop = el('div', 'admin-card-top');
-      const siteTitle = el('strong', '', `入口 ${siteIndex + 1}`);
+      const siteCard = el('details', 'site-editor');
+      siteCard.open = !site.name;
+      const siteTop = el('summary', 'admin-card-top');
+      const siteTitle = el('strong', '', site.name || `新入口 ${siteIndex + 1}`);
       const removeSiteBtn = el('button', 'danger-btn small', '删除入口');
       removeSiteBtn.type = 'button';
-      removeSiteBtn.addEventListener('click', () => {
+      removeSiteBtn.addEventListener('click', (event) => {
+        event.preventDefault();
         group.sites.splice(siteIndex, 1);
         renderGroups();
       });

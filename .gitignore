@@ -18,3 +18,10 @@ data/dingtalk-events.ndjson
 *.log
 .DS_Store
 npm-debug.log*
+
+# Local build snapshots and preview output
+dist.prev/
+ui-candidate/
+ui-fixed/
+.env.*
+!.env.example

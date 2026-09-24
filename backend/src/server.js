@@ -44,6 +44,7 @@ import {
   upsertDingTalkUser
 } from './db.js';
 import { MySqlSessionStore } from './mysql-session-store.js';
+import { createCostRouter } from './cost-ledger.js';
 
 dotenv.config();
 
@@ -100,6 +101,8 @@ app.use(
     }
   })
 );
+
+app.use('/api/admin/costs', createCostRouter({ db: getPool(), requireLogin, requireAdmin, writeAudit }));
 
 setInterval(pruneRateLimitBuckets, 1000 * 60).unref();
 setInterval(() => {
