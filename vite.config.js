@@ -1,8 +1,14 @@
 import { resolve } from 'node:path';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const target = `http://127.0.0.1:${process.env.PORT || env.PORT || 2222}`;
+  return {
   root: 'frontend',
+  server: {
+    proxy: { '/api': { target }, '/uploads': { target } }
+  },
   build: {
     outDir: '../dist',
     emptyOutDir: true,
@@ -17,4 +23,5 @@ export default defineConfig({
       }
     }
   }
+  };
 });

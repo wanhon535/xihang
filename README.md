@@ -136,6 +136,8 @@ system_settings        系统设置
 admin_audit_logs       管理操作审计日志
 user_preferences       用户工作台外观配置
 app_sessions           登录 session
+cost_entries           管理员共享成本台账
+cost_attachments       台账凭证附件
 ```
 
 如果 `nav_groups` 为空，后端会自动导入 `data/sites.json` 作为初始导航数据。
@@ -143,10 +145,14 @@ app_sessions           登录 session
 也可以手动导入 SQL：
 
 ```powershell
-mysql -h 127.0.0.1 -P 3306 -u root -p < sql/tidesail.sql
+mysql -h 127.0.0.1 -P 3306 -u root -p -e "source sql/tidesail.sql"
 ```
 
-`sql/tidesail.sql` 包含 `CREATE DATABASE IF NOT EXISTS`、建表语句和示例站点数据。
+`sql/tidesail.sql` 已从当前数据库导出全部 11 张表的结构（含成本台账与附件），附带示例站点数据，可重复导入空库而不重复添加站点。文件默认创建/使用 `tidesail` 库，与 `.env.example` 一致。自定义数据库名时请同时修改 SQL 的 `CREATE DATABASE` / `USE` 和 `.env` 的 `MYSQL_DATABASE`。
+
+SQL 不包含线上账号、星钥密码、账目、附件、会话或钉钉密钥。后端第一次启动会补齐系统设置并根据 `.env` 创建本地管理员，因此本地开发不依赖生产数据。已有旧库应通过后端启动执行兼容迁移，SQL 用于新建开发库。
+
+完整本地开发步骤见 [LOCAL_DEVELOPMENT.md](./docs/LOCAL_DEVELOPMENT.md)。
 
 ## 默认账号
 
