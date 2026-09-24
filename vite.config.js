@@ -19,7 +19,8 @@ export default defineConfig(({ mode }) => {
         changePassword: resolve(__dirname, 'frontend/change-password.html'),
         admin: resolve(__dirname, 'frontend/admin.html'),
         vault: resolve(__dirname, 'frontend/vault.html'),
-        ledger: resolve(__dirname, 'frontend/ledger.html')
+        ledger: resolve(__dirname, 'frontend/ledger.html'),
+        screen: resolve(__dirname, 'frontend/screen.html')
       }
     }
   }

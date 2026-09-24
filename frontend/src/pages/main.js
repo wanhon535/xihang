@@ -1,5 +1,3 @@
-import { initSeasonalParticles } from '../seasonal-particles.js';
-import { loadAppearance } from '../appearance.js';
 import { setWorkspaceUser } from '../shell.js';
 import { api, createSsoUrl, logout, redirectToLogin, requireUser } from '../api.js';
 import { API_BASE_URL } from '../config.js';
@@ -58,7 +56,6 @@ async function init() {
     document.querySelectorAll('.admin-only').forEach((node) => node.classList.toggle('hidden', user.role !== 'admin'));
     // Loading a user's optional theme must not block the application directory.
     setWorkspaceUser(user);
-    void loadAppearance(user);
     const payload = await api('/api/nav/groups');
     allGroups = payload.groups || [];
     groupCount.textContent = allGroups.length;
@@ -67,7 +64,6 @@ async function init() {
     loadKeyCount();
     renderGroupFilters();
     renderDirectory();
-    try { initSeasonalParticles(user); } catch { /* Optional decoration must not interrupt the application directory. */ }
   } catch (error) {
     if (error.status === 401) {
       redirectToLogin();

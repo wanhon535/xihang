@@ -1,4 +1,3 @@
-import { loadAppearance } from '../appearance.js';
 import { setWorkspaceUser } from '../shell.js';
 import { api, logout, redirectToLogin, requireUser } from '../api.js';
 import { API_BASE_URL } from '../config.js';
@@ -308,7 +307,6 @@ async function init() {
       return;
     }
     setWorkspaceUser(user);
-    void loadAppearance(user);
     $('userName').textContent = user.nick || user.username || '管理员';
     $('ledgerWorkspace').hidden = false;
     await loadEntries();

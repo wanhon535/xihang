@@ -1,0 +1,83 @@
+/* 数据大屏：跨项目数据流向 / 成本核算 / 项目完成情况一屏总览。 */
+.vben-shell.screen-page #status {margin:0 0 16px}
+.vben-shell.screen-page #status.ledger-error {color:#f87171}
+
+/* Status bar: live clock + auto-refresh, sets the "control room" tone. */
+.vben-shell.screen-page .screen-statusbar {display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;margin-bottom:16px;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-lg)}
+.vben-shell.screen-page .screen-clock {display:flex;align-items:baseline;gap:10px}
+.vben-shell.screen-page .screen-clock strong {font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:1px;color:var(--theme-accent,#67e8f9);text-shadow:0 0 12px color-mix(in srgb,var(--theme-accent,#67e8f9) 55%,transparent)}
+.vben-shell.screen-page .screen-clock span {font-size:12px;color:var(--muted)}
+.vben-shell.screen-page .screen-statusbar-right {display:flex;align-items:center;gap:14px}
+.vben-shell.screen-page .screen-updated {font-size:12px;color:var(--muted)}
+.vben-shell.screen-page .screen-live-toggle {display:flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:12px;cursor:pointer}
+.vben-shell.screen-page .screen-live-dot {width:7px;height:7px;border-radius:999px;background:#4ade80;box-shadow:0 0 8px #4ade80;animation:screenPulse 1.6s ease-in-out infinite}
+.vben-shell.screen-page .screen-live-toggle.is-paused .screen-live-dot {background:#6b7280;box-shadow:none;animation:none}
+@keyframes screenPulse {0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+
+/* KPI strip: glowing tiles up top, the first thing the eye lands on. */
+.vben-shell.screen-page .screen-kpi-strip {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}
+.vben-shell.screen-page .screen-kpi-tile {position:relative;display:flex;flex-direction:column;gap:4px;padding:18px 20px;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-lg);overflow:hidden}
+.vben-shell.screen-page .screen-kpi-tile:before {content:'';position:absolute;inset:0;background:linear-gradient(135deg,color-mix(in srgb,var(--theme-accent,#67e8f9) 14%,transparent),transparent 60%);pointer-events:none}
+.vben-shell.screen-page .screen-kpi-tile:hover {border-color:var(--theme-accent,#67e8f9);box-shadow:0 0 22px color-mix(in srgb,var(--theme-accent,#67e8f9) 30%,transparent)}
+.vben-shell.screen-page .screen-kpi-icon {font-size:18px;opacity:.85}
+.vben-shell.screen-page .screen-kpi-tile strong {font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--theme-accent,#67e8f9);text-shadow:0 0 16px color-mix(in srgb,var(--theme-accent,#67e8f9) 45%,transparent)}
+.vben-shell.screen-page .screen-kpi-tile span {font-size:12px;color:var(--muted)}
+.vben-shell.screen-page .screen-kpi-danger strong {color:#f87171;text-shadow:0 0 16px #f8717166}
+.vben-shell.screen-page .screen-kpi-warning strong {color:#fbbf24;text-shadow:0 0 16px #fbbf2466}
+
+.vben-shell.screen-page .screen-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+.vben-shell.screen-page .screen-card {background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-lg);padding:20px;transition:border-color .18s ease,box-shadow .18s ease}
+.vben-shell.screen-page .screen-card:hover {border-color:color-mix(in srgb,var(--theme-accent,#67e8f9) 55%,var(--line-strong))}
+.vben-shell.screen-page .screen-card h2 {margin:0 0 16px;font-size:15px;letter-spacing:.02em;display:flex;align-items:baseline;gap:8px}
+.vben-shell.screen-page .screen-card h2 small {font-size:11px;font-weight:400;color:var(--muted)}
+.vben-shell.screen-page .screen-card-wide {grid-column:1/-1}
+
+.vben-shell.screen-page .screen-project-table {width:100%;border-collapse:collapse;font-size:13px}
+.vben-shell.screen-page .screen-project-table th {text-align:left;color:var(--muted);font-weight:500;padding:8px 10px;border-bottom:1px solid var(--line-strong)}
+.vben-shell.screen-page .screen-project-table td {padding:10px;border-bottom:1px solid var(--line)}
+.vben-shell.screen-page .screen-project-row {cursor:pointer}
+.vben-shell.screen-page .screen-project-row:hover {background:var(--surface-2)}
+.vben-shell.screen-page .screen-project-row:focus-visible {outline:2px solid var(--theme-accent,#67e8f9);outline-offset:-2px}
+.vben-shell.screen-page .screen-project-detail td {background:var(--surface-2);color:var(--ink-2);font-size:12px;padding:10px 14px;border-bottom:1px solid var(--line)}
+
+.vben-shell.screen-page .screen-badge {display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;white-space:nowrap}
+.vben-shell.screen-page .screen-badge-danger {background:#f8717122;color:#f87171}
+.vben-shell.screen-page .screen-badge-warning {background:#fbbf2422;color:#fbbf24}
+.vben-shell.screen-page .screen-badge-ok {background:#4ade8022;color:#4ade80}
+
+/* Payment donut. */
+.vben-shell.screen-page .screen-donut-wrap {position:relative;width:150px;height:150px;margin:0 auto 16px}
+.vben-shell.screen-page .screen-donut {width:100%;height:100%;transform:rotate(-90deg)}
+.vben-shell.screen-page .screen-donut-track {fill:none;stroke:var(--surface-2);stroke-width:11}
+.vben-shell.screen-page .screen-donut-fill {fill:none;stroke:var(--theme-accent,#67e8f9);stroke-width:11;stroke-linecap:round;transition:stroke-dashoffset .7s cubic-bezier(.22,1,.36,1);filter:drop-shadow(0 0 6px color-mix(in srgb,var(--theme-accent,#67e8f9) 60%,transparent))}
+.vben-shell.screen-page .screen-donut-center {position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.vben-shell.screen-page .screen-donut-center strong {font-size:22px;color:var(--ink)}
+.vben-shell.screen-page .screen-donut-center span {font-size:11px;color:var(--muted)}
+.vben-shell.screen-page .screen-donut-legend {display:flex;justify-content:center;gap:20px;font-size:12px;color:var(--ink-2)}
+.vben-shell.screen-page .screen-donut-legend strong {display:block;font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+.vben-shell.screen-page .screen-dot {display:inline-block;width:8px;height:8px;border-radius:999px;margin-right:6px}
+.vben-shell.screen-page .screen-dot-paid {background:var(--theme-accent,#67e8f9)}
+.vben-shell.screen-page .screen-dot-unpaid {background:var(--surface-3)}
+
+.vben-shell.screen-page .screen-bars {display:flex;flex-direction:column;gap:10px}
+.vben-shell.screen-page .screen-bar-row {display:grid;grid-template-columns:96px 1fr 88px;align-items:center;gap:10px;font-size:12px}
+.vben-shell.screen-page .screen-bar-label {color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vben-shell.screen-page .screen-bar-track {background:var(--surface-2);border-radius:999px;height:8px;overflow:hidden}
+.vben-shell.screen-page .screen-bar-fill {display:block;height:100%;background:linear-gradient(90deg,color-mix(in srgb,var(--theme-accent,#67e8f9) 60%,var(--primary)),var(--theme-accent,#67e8f9));border-radius:999px;transition:width .5s ease}
+.vben-shell.screen-page .screen-bar-value {text-align:right;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+.vben-shell.screen-page .screen-empty {color:var(--muted);font-size:13px}
+.vben-shell.screen-page .screen-empty code {background:var(--surface-2);padding:1px 6px;border-radius:4px}
+
+/* Data-flow placeholder: an animated schematic, clearly a stand-in until DingTalk sync lands. */
+.vben-shell.screen-page .screen-flow-placeholder {display:flex;flex-direction:column;gap:10px;align-items:center}
+.vben-shell.screen-page .screen-flow-svg {width:100%;max-width:640px;height:auto}
+.vben-shell.screen-page .screen-flow-links path {fill:none;stroke:var(--line-strong);stroke-width:1.5;stroke-dasharray:4 4}
+.vben-shell.screen-page .screen-flow-nodes circle {fill:var(--surface-3);stroke:var(--theme-accent,#67e8f9);stroke-width:1.5}
+.vben-shell.screen-page .screen-flow-nodes text {fill:var(--muted);font-size:11px;text-anchor:middle}
+.vben-shell.screen-page .screen-flow-nodes .screen-flow-label-down {fill:var(--muted)}
+.vben-shell.screen-page .screen-flow-pulse {fill:var(--theme-accent,#67e8f9);filter:drop-shadow(0 0 4px var(--theme-accent,#67e8f9))}
+
+@media(max-width:1200px){.vben-shell.screen-page .screen-grid {grid-template-columns:1fr 1fr}.vben-shell.screen-page .screen-kpi-strip {grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.vben-shell.screen-page .screen-grid {grid-template-columns:1fr}.vben-shell.screen-page .screen-kpi-strip {grid-template-columns:1fr}.vben-shell.screen-page .screen-statusbar {flex-direction:column;align-items:flex-start;gap:10px}}
+@media(prefers-reduced-motion:reduce){.vben-shell.screen-page .screen-live-dot {animation:none}.vben-shell.screen-page .screen-flow-pulse {display:none}}

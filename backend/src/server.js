@@ -45,6 +45,7 @@ import {
 } from './db.js';
 import { MySqlSessionStore } from './mysql-session-store.js';
 import { createCostRouter } from './cost-ledger.js';
+import { createDashboardRouter } from './dashboard.js';
 
 dotenv.config();
 
@@ -103,6 +104,7 @@ app.use(
 );
 
 app.use('/api/admin/costs', createCostRouter({ db: getPool(), requireLogin, requireAdmin, writeAudit }));
+app.use('/api/admin/dashboard', createDashboardRouter({ db: getPool(), requireLogin, requireAdmin, projectsPath: path.join(rootDir, 'data', 'xigou-projects.json') }));
 
 setInterval(pruneRateLimitBuckets, 1000 * 60).unref();
 setInterval(() => {

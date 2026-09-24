@@ -1,6 +1,6 @@
-import { loadAppearance } from '../appearance.js';
 import { setWorkspaceUser } from '../shell.js';
 import { api, logout, redirectToLogin, requireUser } from '../api.js';
+import { showToast } from '../ui-feedback.js';
 
 const userName = document.querySelector('#userName');
 const logoutBtn = document.querySelector('#logoutBtn');
@@ -90,7 +90,6 @@ async function init() {
     }
 
     setWorkspaceUser(user);
-    void loadAppearance(user);
     userName.textContent = user.nick || user.username || '汐航用户';
     document.querySelectorAll('.admin-only').forEach((node) => node.classList.toggle('hidden', user.role !== 'admin'));
     startCreate();
@@ -273,9 +272,11 @@ function renderCredentialCard(credential) {
         return;
       }
       await copyText(credential.loginUsername);
+      showToast('已添加到剪贴板', copyUserBtn);
       setInlineStatus(secretValue, '账号已复制');
       secretBox.classList.remove('hidden');
     } catch (error) {
+      showToast(error.message || '复制失败', copyUserBtn);
       setInlineStatus(secretValue, error.message || '复制失败');
       secretBox.classList.remove('hidden');
     }
@@ -284,9 +285,11 @@ function renderCredentialCard(credential) {
     try {
       const password = await fetchPassword(credential.id);
       await copyText(password);
+      showToast('已添加到剪贴板', copyPasswordBtn);
       setInlineStatus(secretValue, '密码已复制');
       secretBox.classList.remove('hidden');
     } catch (error) {
+      showToast(error.message || '复制失败', copyPasswordBtn);
       setInlineStatus(secretValue, error.message || '复制失败');
       secretBox.classList.remove('hidden');
     }
@@ -479,8 +482,10 @@ async function copyGeneratedPassword() {
   try {
     updateGeneratorPreview();
     await copyText(lastGeneratedPassword);
+    showToast('已添加到剪贴板', copyGeneratedPasswordBtn);
     formStatus.textContent = '生成密码已复制。';
   } catch (error) {
+    showToast(error.message || '复制失败', copyGeneratedPasswordBtn);
     formStatus.textContent = error.message || '复制失败。';
   }
 }

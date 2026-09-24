@@ -2,9 +2,14 @@ import { api } from './api.js';
 import { API_BASE_URL } from './config.js';
 import { applyPersonalTheme } from './workspace-theme.js';
 import panelMarkup from './appearance-panel.html?raw';
-let loadEditor;
 let activeUserId;
 let channel;
+// Returns { load(user) } rather than relying on a module-scope variable that a
+// separate loadAppearance() export would read: under Vite dev HMR, two import
+// sites (shell.js and a page's own script) can end up resolving to two distinct
+// module instances, silently desyncing that shared state so the theme never
+// applies. Handing the loader back through the same call that set it up avoids
+// the cross-instance dependency entirely.
 export function initAppearance() {
   document.querySelector('.console-topbar').insertAdjacentHTML('afterend', panelMarkup);
 const themeToggleBtn = document.querySelector('#themeToggleBtn');
@@ -50,11 +55,35 @@ const THEME_PRESETS = {
   }
 };
 
+let themeDrawerBackdrop;
+function ensureThemeDrawerBackdrop() {
+  if (themeDrawerBackdrop) return themeDrawerBackdrop;
+  themeDrawerBackdrop = document.createElement('button');
+  themeDrawerBackdrop.type = 'button';
+  themeDrawerBackdrop.className = 'theme-drawer-backdrop';
+  themeDrawerBackdrop.setAttribute('aria-label', '关闭外观设置');
+  themeDrawerBackdrop.hidden = true;
+  themeDrawerBackdrop.addEventListener('click', closeThemePanel);
+  document.body.append(themeDrawerBackdrop);
+  return themeDrawerBackdrop;
+}
+function openThemePanel() {
+  workspaceThemePanel?.classList.add('open');
+  ensureThemeDrawerBackdrop().hidden = false;
+  themeToggleBtn?.setAttribute('aria-expanded', 'true');
+}
+function closeThemePanel() {
+  workspaceThemePanel?.classList.remove('open');
+  if (themeDrawerBackdrop) themeDrawerBackdrop.hidden = true;
+  themeToggleBtn?.setAttribute('aria-expanded', 'false');
+}
+themeToggleBtn?.setAttribute('aria-expanded', 'false');
 themeToggleBtn?.addEventListener('click', () => {
-  workspaceThemePanel?.classList.toggle('hidden');
+  workspaceThemePanel?.classList.contains('open') ? closeThemePanel() : openThemePanel();
 });
-themePanelCloseBtn?.addEventListener('click', () => {
-  workspaceThemePanel?.classList.add('hidden');
+themePanelCloseBtn?.addEventListener('click', closeThemePanel);
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && workspaceThemePanel?.classList.contains('open')) closeThemePanel();
 });
 [themeModeInput, solidColorInput, gradientStartInput, gradientEndInput, gradientAngleInput, overlayInput].forEach((input) => {
   input?.addEventListener('input', previewWorkspaceThemeFromForm);
@@ -67,7 +96,7 @@ document.querySelectorAll('[data-theme-preset]').forEach((button) => {
   button.addEventListener('click', () => applyThemePreset(button.dataset.themePreset));
 });
 
-function openFromHash() { if (location.hash === '#appearance') workspaceThemePanel.classList.remove('hidden'); }
+function openFromHash() { if (location.hash === '#appearance') openThemePanel(); }
 window.addEventListener('hashchange', openFromHash);
 openFromHash();
 async function loadWorkspaceTheme() {
@@ -283,13 +312,14 @@ function clampNumber(value, min, max, fallback) {
 }
 
 
-  loadEditor = loadWorkspaceTheme;
   try {
     channel = new BroadcastChannel('tidesail-appearance');
     channel.onmessage = event => { if (event.data?.userId === activeUserId) void loadWorkspaceTheme(); };
   } catch {}
-}
-export function loadAppearance(user) {
-  activeUserId = String(user.id);
-  return loadEditor?.();
+  return {
+    load(user) {
+      activeUserId = String(user.id);
+      return loadWorkspaceTheme();
+    }
+  };
 }

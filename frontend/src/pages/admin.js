@@ -1,5 +1,4 @@
-import { loadAppearance } from '../appearance.js';
-import { setWorkspaceUser } from '../shell.js';
+import { setWorkspaceUser, syncActiveHeading, setNotifications } from '../shell.js';
 import { api, logout, redirectToLogin, requireUser } from '../api.js';
 
 const editor = document.querySelector('#adminEditor');
@@ -30,11 +29,13 @@ const backupPreview = document.querySelector('#backupPreview');
 const settingsForm = document.querySelector('#settingsForm');
 const emailSettingsForm = document.querySelector('#emailSettingsForm');
 const securitySettingsForm = document.querySelector('#securitySettingsForm');
+const automationSettingsForm = document.querySelector('#automationSettingsForm');
 const settingsStatus = document.querySelector('#settingsStatus');
 const settingsStatusNodes = [
   settingsStatus,
   document.querySelector('#emailSettingsStatus'),
   document.querySelector('#securitySettingsStatus'),
+  document.querySelector('#automationSettingsStatus'),
   document.querySelector('#backupStatus')
 ].filter(Boolean);
 const statTotalUsers = document.querySelector('#stat-total-users');
@@ -54,8 +55,23 @@ const settingFields = {
   smtpHost: document.querySelector('#settingSmtpHost'),
   smtpPort: document.querySelector('#settingSmtpPort'),
   smtpFrom: document.querySelector('#settingSmtpFrom'),
-  backupRetentionDays: document.querySelector('#settingBackupRetentionDays')
+  backupRetentionDays: document.querySelector('#settingBackupRetentionDays'),
+  smsProvider: document.querySelector('#settingSmsProvider'),
+  smsAccessKeyId: document.querySelector('#settingSmsAccessKeyId'),
+  smsAccessKeySecret: document.querySelector('#settingSmsAccessKeySecret'),
+  smsSignName: document.querySelector('#settingSmsSignName'),
+  smsTemplateCode: document.querySelector('#settingSmsTemplateCode'),
+  dingtalkNotifyAppKey: document.querySelector('#settingDingtalkNotifyAppKey'),
+  dingtalkNotifyAppSecret: document.querySelector('#settingDingtalkNotifyAppSecret'),
+  dingtalkNotifyAgentId: document.querySelector('#settingDingtalkNotifyAgentId'),
+  dingtalkNotifyUserIds: document.querySelector('#settingDingtalkNotifyUserIds'),
+  dingtalkNotifyDeptIds: document.querySelector('#settingDingtalkNotifyDeptIds')
 };
+// Secret fields: the backend never returns the real value, only a "configured" marker.
+// The password input stays blank (so a blank submit means "leave it alone") and shows
+// the marker as a placeholder hint instead of a value.
+const SECRET_SETTING_KEYS = new Set(['smsAccessKeySecret', 'dingtalkNotifyAppSecret']);
+const SECRET_CONFIGURED_MARKER = '__configured__';
 
 const actionLabels = {
   'user.create': '创建用户',
@@ -89,6 +105,7 @@ statusFilter.addEventListener('change', renderUsers);
 settingsForm.addEventListener('submit', saveSettings);
 emailSettingsForm.addEventListener('submit', saveSettings);
 securitySettingsForm.addEventListener('submit', saveSettings);
+automationSettingsForm.addEventListener('submit', saveSettings);
 refreshAuditBtn.addEventListener('click', refreshAuditLogs);
 refreshLogsBtn.addEventListener('click', refreshAuditLogs);
 refreshMonitorBtn.addEventListener('click', refreshOverview);
@@ -101,6 +118,32 @@ panelTriggers.forEach((trigger) => {
     showPanel(trigger.dataset.adminPanel, true);
   });
 });
+
+initNavGroups();
+function initNavGroups() {
+  const collapsedKey = 'tidesail.admin.navGroups.collapsed';
+  let collapsed;
+  try { collapsed = new Set(JSON.parse(localStorage.getItem(collapsedKey) || '[]')); } catch { collapsed = new Set(); }
+  const save = () => { try { localStorage.setItem(collapsedKey, JSON.stringify([...collapsed])); } catch {} };
+  document.querySelectorAll('.nav-group').forEach((group) => {
+    const toggle = group.querySelector('.nav-group-title');
+    const items = group.querySelector('.nav-group-items');
+    if (!toggle || !items) return;
+    if (!items.id) items.id = `${toggle.id}-items`;
+    toggle.setAttribute('aria-controls', items.id);
+    const applyState = () => {
+      const isCollapsed = collapsed.has(toggle.id);
+      group.classList.toggle('collapsed', isCollapsed);
+      toggle.setAttribute('aria-expanded', String(!isCollapsed));
+    };
+    applyState();
+    toggle.addEventListener('click', () => {
+      if (collapsed.has(toggle.id)) collapsed.delete(toggle.id); else collapsed.add(toggle.id);
+      save();
+      applyState();
+    });
+  });
+}
 
 window.addEventListener('hashchange', () => showPanel(getInitialPanel()));
 init();
@@ -116,7 +159,6 @@ async function init() {
       return;
     }
     setWorkspaceUser(currentUser);
-    void loadAppearance(currentUser);
     userName.textContent = currentUser.nick || currentUser.username || '汐航管理员';
 
     const [overviewPayload, groupPayload, userPayload, settingsPayload, logPayload] = await Promise.all([
@@ -172,6 +214,7 @@ function showPanel(panel, navigate = false) {
   document.querySelector('.topbar-subtitle').textContent = activePanel.querySelector('.board-head p:last-child').textContent;
   document.querySelector('#admin-stats').classList.toggle('hidden', panel !== 'users');
   document.body.dataset.adminView = panel;
+  syncActiveHeading();
   if (navigate && window.location.hash !== `#${panel}`) window.location.hash = panel;
 }
 
@@ -551,6 +594,11 @@ function fillSettingsForm() {
       inputNode.checked = settings[key] === true || settings[key] === 'true';
       return;
     }
+    if (SECRET_SETTING_KEYS.has(key)) {
+      inputNode.value = '';
+      inputNode.placeholder = settings[key] === SECRET_CONFIGURED_MARKER ? '已配置，留空则不修改' : '未配置';
+      return;
+    }
     inputNode.value = settings[key] ?? '';
   });
 }
@@ -623,6 +671,7 @@ function renderAuditLogs() {
 
   auditList.innerHTML = html;
   operationLogList.innerHTML = html;
+  setNotifications(auditLogs.map(log => ({ title: `${actionLabels[log.action] || log.action}${log.summary ? ' · ' + log.summary : ''}`, time: formatDate(log.createdAt) })));
 }
 
 function renderAuditRow(log) {

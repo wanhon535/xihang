@@ -11,7 +11,8 @@
     "check": "node --check backend/src/server.js",
     "build:frontend": "vite build",
     "test:user-scenarios": "node scripts/user-scenario-smoke.mjs && node scripts/admin-module-smoke.mjs",
-    "verify:refactor": "node scripts/verify-after-refactor.mjs"
+    "verify:refactor": "node scripts/verify-after-refactor.mjs",
+    "report:xigou": "node scripts/xigou-supervisor-brief.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

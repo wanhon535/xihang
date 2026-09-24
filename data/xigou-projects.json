@@ -1,0 +1,25 @@
+{
+  "_readme": "汐构项目监督agent的项目状态数据源。当前为手动维护的占位文件，等汐航后台的项目管理模块上线后，请把这里换成该模块导出/同步的真实数据，字段结构保持一致即可。下面两条是示例数据，接入真实项目前请删除。",
+  "projects": [
+    {
+      "name": "示例项目-汐航二期",
+      "status": "active",
+      "priority": "P1",
+      "last_update": "2026-09-18",
+      "next_milestone": "完成星钥库分享功能验收",
+      "next_milestone_date": "2026-09-26",
+      "owner_phone": "",
+      "note": "等待前端联调结果"
+    },
+    {
+      "name": "示例项目-客户官网改版",
+      "status": "active",
+      "priority": "P2",
+      "last_update": "2026-09-10",
+      "next_milestone": "首屏视觉稿定稿",
+      "next_milestone_date": "2026-10-05",
+      "owner_phone": "",
+      "note": ""
+    }
+  ]
+}

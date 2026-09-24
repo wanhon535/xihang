@@ -20,6 +20,7 @@ body.vben-shell.console-page {
   position:fixed;inset:0 auto 0 0;width:var(--sidebar-width);height:100dvh;z-index:50;
   display:flex;flex-direction:column;gap:0;padding:0;background:var(--rail-surface, #121722);
   border:0;border-right:1px solid var(--line);box-shadow:none;backdrop-filter:none;overflow-y:auto;
+  transition:width .22s ease;
 }
 .vben-shell.console-page .side-logo {display:flex;align-items:center;gap:12px;min-height:64px;padding:16px 20px;margin:0;border-bottom:1px solid var(--line);flex-shrink:0}
 .vben-shell.console-page .side-logo span {display:grid;place-items:center;width:32px;height:32px;font-size:18px;border-radius:8px;background:var(--primary);color:white;box-shadow:none}
@@ -31,22 +32,59 @@ body.vben-shell.console-page {
 .vben-shell.console-page .side-nav a.active {background:var(--theme-soft, #203c65);color:var(--theme-accent, var(--theme-accent, #93c5fd));font-weight:600}
 .vben-shell.console-page .side-nav a.active b {background:transparent;color:inherit}
 .vben-shell.console-page .nav-group {padding-top:14px;margin:0}
-.vben-shell.console-page .nav-group-title {display:block;width:100%;text-align:left;min-height:28px;padding:0 12px 7px;font-size:11px;letter-spacing:1px;color:#6f829f;background:transparent;border:0}
-.vben-shell.console-page .nav-group-items {display:grid;gap:3px;padding:0}
+.vben-shell.console-page .nav-group-title {display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;min-height:28px;padding:0 12px 7px;font-size:11px;letter-spacing:1px;color:#6f829f;background:transparent;border:0;cursor:pointer}
+.vben-shell.console-page .nav-group-title::after {content:'';width:6px;height:6px;flex-shrink:0;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);transition:transform .2s ease}
+.vben-shell.console-page .nav-group.collapsed .nav-group-title::after {transform:rotate(-45deg)}
+.vben-shell.console-page .nav-group-items {display:grid;gap:3px;padding:0;max-height:400px;overflow:hidden;opacity:1;transition:max-height .22s ease,opacity .18s ease}
+.vben-shell.console-page .nav-group.collapsed .nav-group-items {max-height:0;opacity:0}
+@media(prefers-reduced-motion:reduce){.vben-shell.console-page .nav-group-items,.vben-shell.console-page .nav-group-title::after {transition:none}}
 .vben-shell.console-page .rail-note {margin:0;padding:18px 20px;border-top:1px solid var(--line);font-size:12px;color:#93a4bf}
 .vben-shell.console-page .rail-note span {color:#d8e5f6}.vben-shell.console-page .rail-note small {color:#6f829f}
-.vben-shell.console-page .workspace-header {position:fixed;top:0;left:var(--sidebar-width);right:0;height:56px;z-index:40;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--line)}
+.vben-shell.console-page .workspace-header {position:fixed;top:0;left:var(--sidebar-width);right:0;height:56px;z-index:40;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--line);transition:left .22s ease}
 .vben-shell.console-page .workspace-breadcrumb,.vben-shell.console-page .workspace-tools {display:flex;align-items:center;gap:18px;min-width:0}
 .vben-shell.console-page .workspace-breadcrumb {font-size:13px;color:var(--muted)}
 .vben-shell.console-page .workspace-breadcrumb strong {font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vben-shell.console-page .shell-toggle {display:grid;place-items:center;padding:0!important;width:32px;height:32px;min-height:32px!important;border:0!important;background:transparent!important;color:var(--ink)!important;cursor:pointer}
 .vben-shell.console-page .shell-directory {font-size:12px;color:var(--muted);white-space:nowrap}
 .vben-shell.console-page .shell-directory span {padding-left:8px;color:var(--theme-accent, #93c5fd)}
-.vben-shell.console-page .workspace-tabs {position:fixed;top:56px;left:var(--sidebar-width);right:0;z-index:39;height:38px;display:flex;gap:6px;align-items:end;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--line);overflow:hidden}
+
+/* Top toolbar icon buttons: search / notifications / fullscreen. */
+.vben-shell.console-page .shell-icon-btn {position:relative;display:grid;place-items:center;width:32px;height:32px;min-height:32px!important;padding:0!important;border:0!important;border-radius:6px;background:transparent!important;color:var(--muted)!important;cursor:pointer}
+.vben-shell.console-page .shell-icon-btn:hover {background:var(--surface-2)!important;color:var(--ink)!important}
+.vben-shell.console-page .shell-icon-btn svg {width:18px;height:18px}
+.vben-shell.console-page .shell-notify-dot {position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:999px;background:#f87171}
+
+.shell-notify-panel {position:fixed;z-index:80;width:300px;max-height:360px;overflow-y:auto;background:#171d29;border:1px solid #3c4b63;border-radius:8px;box-shadow:0 16px 40px #0008;padding:12px}
+.shell-notify-panel h3 {margin:0 0 8px;padding:0 4px;font-size:12px;letter-spacing:1px;color:#91a0b7}
+.shell-notify-item {display:flex;flex-direction:column;gap:2px;padding:9px 8px;border-radius:6px;font-size:12px}
+.shell-notify-item:hover {background:#1c2432}
+.shell-notify-item strong {color:#e4eaf3;font-weight:500}
+.shell-notify-item span {color:#91a0b7}
+.shell-notify-empty {margin:0;padding:16px 8px;color:#91a0b7;font-size:12px;text-align:center}
+
+/* Quick search command palette (Ctrl/Cmd+K). */
+.shell-search-backdrop {position:fixed;inset:0;z-index:90;background:#060a13bb;backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding-top:14vh}
+.shell-search-panel {width:min(560px,90vw);max-height:60vh;display:flex;flex-direction:column;background:#171d29;border:1px solid #3c4b63;border-radius:10px;box-shadow:0 24px 60px #000a;overflow:hidden}
+.shell-search-panel input {width:100%;padding:16px 18px;border:0;border-bottom:1px solid #2a3445;background:transparent;color:#e4eaf3;font-size:15px;outline:none}
+.shell-search-results {overflow-y:auto;padding:8px}
+.shell-search-results button {display:block;width:100%;text-align:left;padding:10px 12px;border:0;border-radius:6px;background:transparent;color:#c0cbdc;font-size:13px;cursor:pointer}
+.shell-search-results button.active,.shell-search-results button:hover {background:#232d40;color:#e4eaf3}
+.shell-search-empty {margin:0;padding:20px;text-align:center;color:#91a0b7;font-size:13px}
+
+/* Tab bar: close affordance + right-click menu. */
+.vben-shell.console-page .workspace-tabs a {position:relative;display:flex;align-items:center;gap:8px}
+.vben-shell.console-page .workspace-tabs a.pinned {padding-right:18px}
+.tab-close {display:grid;place-items:center;width:15px;height:15px;border-radius:999px;font-size:13px;line-height:1;color:var(--muted);cursor:pointer}
+.tab-close:hover {background:#3c4b63;color:#e4eaf3}
+.shell-tab-menu {position:fixed;z-index:95;min-width:132px;background:#171d29;border:1px solid #3c4b63;border-radius:8px;box-shadow:0 16px 40px #0008;padding:5px;font-size:13px}
+.shell-tab-menu button {display:block;width:100%;text-align:left;padding:7px 10px;border:0;border-radius:5px;background:transparent;color:#c0cbdc;cursor:pointer}
+.shell-tab-menu button:hover {background:#232d40;color:#e4eaf3}
+@media(max-width:760px){.vben-shell.console-page .shell-icon-btn {display:none}}
+.vben-shell.console-page .workspace-tabs {position:fixed;top:56px;left:var(--sidebar-width);right:0;z-index:39;height:38px;display:flex;gap:6px;align-items:end;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--line);overflow:hidden;transition:left .22s ease}
 .vben-shell.console-page .workspace-tabs a {height:31px;padding:5px 18px;color:var(--muted);font-size:12px;white-space:nowrap;border:1px solid transparent;border-bottom:0;border-radius:5px 5px 0 0}
 .vben-shell.console-page .workspace-tabs a.active {background:var(--theme-soft, #21304a);border-color:var(--line-strong);color:var(--theme-accent, var(--theme-accent, #93c5fd));box-shadow:inset 0 -2px var(--primary)}
 .vben-shell.console-page .workspace-label {margin-left:auto;align-self:center;color:#627590;font-size:11px;letter-spacing:1px}
-.vben-shell.console-page .console-main {position:relative;min-width:0;max-width:none;width:auto;min-height:100vh;margin:0 0 0 var(--sidebar-width);padding:116px 24px 24px;color:var(--ink)}
+.vben-shell.console-page .console-main {position:relative;z-index:auto;min-width:0;max-width:none;width:auto;min-height:100vh;margin:0 0 0 var(--sidebar-width);padding:116px 24px 24px;color:var(--ink);transition:margin-left .22s ease}
 .vben-shell.console-page .console-topbar.page-heading {display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 22px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
 .vben-shell.console-page .page-heading h1 {margin:0;font-size:22px;line-height:1.5;letter-spacing:0;font-weight:600}
 .vben-shell.console-page .page-heading .eyebrow {display:none}
@@ -165,6 +203,7 @@ body.vben-shell.console-page {
 .vben-shell.console-page.nav-collapsed .side-logo {padding:16px 18px}.vben-shell.console-page.nav-collapsed .side-logo strong,.vben-shell.console-page.nav-collapsed .side-nav a>span,.vben-shell.console-page.nav-collapsed .nav-group-title,.vben-shell.console-page.nav-collapsed .rail-note {display:none}
 .vben-shell.console-page.nav-collapsed .side-nav {padding:16px 8px}.vben-shell.console-page.nav-collapsed .side-nav a {justify-content:center;padding:10px}
 .vben-shell.console-page.nav-collapsed .nav-group {padding-top:12px;border-top:1px solid var(--line);margin-top:8px}
+.vben-shell.console-page.nav-collapsed .nav-group.collapsed .nav-group-items {max-height:400px;opacity:1}
 .vben-shell.console-page .shell-backdrop {position:fixed;inset:0;z-index:49;border:0;border-radius:0;background:#0009}
 @media(min-width:1600px){.vben-shell.console-page .console-main {padding-left:32px;padding-right:32px}.vben-shell.console-page .workspace-columns {grid-template-columns:minmax(0,1fr) 310px}}
 @media(max-width:1200px){
@@ -383,23 +422,39 @@ body.vben-shell.console-page.custom-workspace-theme {
 .vben-shell.console-page .site-editor-list {grid-template-columns:1fr}
 .vben-shell.console-page details.site-editor[open] {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0}
 .vben-shell.console-page details.site-editor>summary {grid-column:1/-1}
-.vben-shell.console-page .workspace-theme-panel {border:1px solid var(--line-strong);background:var(--surface);margin-bottom:20px}
+/* Settings drawer: slides in from the right with a live theme preview, vben-admin style. */
+.vben-shell.console-page .workspace-theme-panel {position:fixed;inset:0 0 0 auto;width:min(380px,100vw);z-index:70;border:0;border-left:1px solid var(--line-strong);border-radius:0;background:var(--surface);box-shadow:-16px 0 40px #0007;transform:translateX(100%);transition:transform .24s ease;overflow-y:auto;margin:0}
+.vben-shell.console-page .workspace-theme-panel.open {transform:translateX(0)}
+.vben-shell.console-page .workspace-theme-panel .theme-controls-grid {grid-template-columns:1fr}
+.vben-shell.console-page .theme-drawer-backdrop {position:fixed;inset:0;z-index:69;border:0;border-radius:0;background:#0009;animation:screenFadeIn .18s ease}
 .vben-shell.console-page .theme-preview-card {min-height:130px;border:1px solid var(--line-strong);border-radius:6px}
-.vben-shell.console-page.image-workspace-theme .board,.vben-shell.console-page.image-workspace-theme .ledger-panel,.vben-shell.console-page.image-workspace-theme .vault-actions-bar {background:color-mix(in srgb,var(--surface) 86%,transparent);backdrop-filter:blur(8px)}
-.vben-shell.console-page.image-workspace-theme .board-head,.vben-shell.console-page.image-workspace-theme .credential-group-head,.vben-shell.console-page.image-workspace-theme .vault-table-head {background:color-mix(in srgb,var(--surface-2) 75%,transparent)}
-.vben-shell.console-page.image-workspace-theme .dashboard-stats article,.vben-shell.console-page.image-workspace-theme .vault-summary article,.vben-shell.console-page.image-workspace-theme .admin-stats-grid article,.vben-shell.console-page.image-workspace-theme .ledger-stats article {background:color-mix(in srgb,var(--surface) 86%,transparent)}
+@keyframes screenFadeIn {from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.vben-shell.console-page .workspace-theme-panel {transition:none}.vben-shell.console-page .theme-drawer-backdrop {animation:none}}
+/* Cards stay slightly translucent on every theme mode (not just image mode) so the
+   ambient particle layer is actually visible through them instead of fully hidden
+   behind opaque surfaces — otherwise a content-dense page like the workspace home
+   leaves almost no bare canvas for the particles to show through at all. */
+.vben-shell.console-page .board,.vben-shell.console-page .ledger-panel,.vben-shell.console-page .vault-actions-bar,.vben-shell.console-page .dashboard-hero {background:color-mix(in srgb,var(--surface) 86%,transparent);backdrop-filter:blur(8px)}
+.vben-shell.console-page .board-head,.vben-shell.console-page .credential-group-head,.vben-shell.console-page .vault-table-head {background:color-mix(in srgb,var(--surface-2) 75%,transparent)}
+.vben-shell.console-page .dashboard-stats article,.vben-shell.console-page .vault-summary article,.vben-shell.console-page .admin-stats-grid article,.vben-shell.console-page .ledger-stats article {background:color-mix(in srgb,var(--surface) 86%,transparent)}
 @media(max-width:1200px){.vben-shell.console-page .vault-table-head {display:none}.vben-shell.console-page .credential-card {grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.vben-shell.console-page .credential-actions {grid-column:1/-1;justify-content:flex-start}}
 @media(max-width:760px){.vben-shell.console-page .credential-card {grid-template-columns:1fr;gap:12px}.vben-shell.console-page details.site-editor[open] {grid-template-columns:1fr}.vben-shell.console-page .workspace-tabs {padding:0 8px;gap:0}.vben-shell.console-page .workspace-tabs a {padding:5px 12px}.vben-shell.console-page .theme-controls-grid {grid-template-columns:1fr 1fr}}
 
-/* Homepage-only ambient layer: above the page background, below all content. */
-body.vben-shell.home-page {isolation:isolate}
-.vben-shell.home-page #seasonalParticles {position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none!important;opacity:.4;contain:strict}
-.vben-shell.home-page .console-main {z-index:1}
-.vben-shell.home-page .seasonal-setting small {font-size:11px;line-height:1.7;font-weight:400}
-@media(prefers-reduced-motion:reduce){.vben-shell.home-page #seasonalParticles {display:none!important}}
+/* Shared ambient and feedback layers stay above backgrounds, below controls, and outside the layout flow. */
+body.vben-shell.console-page {isolation:isolate}
+.vben-shell.console-page #appAmbientLayer {position:fixed;inset:0;z-index:-1;pointer-events:none!important;opacity:.5;contain:strict}
+.vben-shell.console-page #seasonalParticles {position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none!important}
+.vben-shell.console-page .console-main > *:not(.workspace-theme-panel) {position:relative;z-index:3}
+.vben-shell.console-page .seasonal-setting small {font-size:11px;line-height:1.7;font-weight:400}
+#appToastRegion {position:fixed;inset:0;z-index:1000;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);pointer-events:none}
+.app-toast {position:fixed;max-width:min(360px,calc(100vw - 32px));padding:10px 14px;border:1px solid #7dd3fc66;border-radius:10px;background:#092238ed;color:#ecfeff;box-shadow:0 14px 32px #02091480;font-size:13px;line-height:1.5;text-align:center;pointer-events:none;opacity:0;transform:translateY(-6px);transition:opacity .18s ease,transform .18s ease;overflow-wrap:anywhere}
+.app-toast[data-state='visible'] {opacity:1;transform:none}
+.app-toast[data-state='leaving'] {opacity:0;transform:translateY(-4px)}
+.app-toast.is-centered[data-state='visible'] {transform:translate(-50%,0)}
+@media(prefers-reduced-motion:reduce){.vben-shell.console-page #seasonalParticles {display:none!important}.app-toast {transition:none}.vben-shell.console-page .side-rail,.vben-shell.console-page .workspace-header,.vben-shell.console-page .workspace-tabs,.vben-shell.console-page .console-main {transition:none}}
+body.vben-shell.console-page .console-topbar.page-heading {display:none}
 
 /* Keep location labels in navigation, and give the application directory the full row. */
-.vben-shell.home-page .console-topbar.page-heading {display:none}
 .vben-shell.home-page .workspace-columns {grid-template-columns:minmax(0,1fr)}
 .vben-shell.home-page .dashboard-stats article:before {display:none}
 .vben-shell.home-page .dashboard-stats .stat-semantic-icon {position:absolute;right:18px;top:20px;width:28px;height:28px;color:var(--theme-accent,#93c5fd)}

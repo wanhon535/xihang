@@ -33,9 +33,21 @@ export function applyPersonalTheme(theme = {}) {
   if (theme.mode === 'image' && (/^(?:\/api\/user\/workspace-theme\/backgrounds|\/uploads\/workspace-backgrounds\/\d+)\/[\w.-]+$/.test(image))) {
     background = `url("${API_BASE_URL}${image}") center / cover no-repeat`;
   }
+  const overlayColor = `rgba(8,9,10,${overlay})`;
   document.body.style.setProperty('--workspace-theme-background', background);
-  document.body.style.setProperty('--workspace-theme-overlay', `rgba(8,9,10,${overlay})`);
+  document.body.style.setProperty('--workspace-theme-overlay', overlayColor);
   document.body.classList.add('custom-workspace-theme');
   document.body.classList.toggle('image-workspace-theme', theme.mode === 'image' && !!image);
+  cacheThemeSnapshot({ tokens, background, overlayColor, isImage: theme.mode === 'image' && !!image });
+}
+
+// The next page load is a full MPA navigation with no way to know the theme
+// before its own network round trip resolves, so it would otherwise paint the
+// default dark canvas first and visibly flash to the real theme. Caching the
+// last-applied theme lets a tiny inline bootstrap script (see index.html etc.)
+// paint the right colors before first paint; this function then reconciles it
+// with the authoritative fetch as usual.
+function cacheThemeSnapshot(snapshot) {
+  try { localStorage.setItem('tidesail.theme.snapshot', JSON.stringify(snapshot)); } catch {}
 }
 

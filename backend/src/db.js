@@ -24,7 +24,17 @@ const DEFAULT_SYSTEM_SETTINGS = {
   smtpHost: '',
   smtpPort: '465',
   smtpFrom: '',
-  backupRetentionDays: '30'
+  backupRetentionDays: '30',
+  smsProvider: 'aliyun',
+  smsAccessKeyId: '',
+  smsAccessKeySecret: '',
+  smsSignName: '',
+  smsTemplateCode: '',
+  dingtalkNotifyAppKey: '',
+  dingtalkNotifyAppSecret: '',
+  dingtalkNotifyAgentId: '',
+  dingtalkNotifyUserIds: '',
+  dingtalkNotifyDeptIds: ''
 };
 
 const SYSTEM_SETTING_LABELS = {
@@ -39,8 +49,25 @@ const SYSTEM_SETTING_LABELS = {
   smtpHost: 'SMTP 主机',
   smtpPort: 'SMTP 端口',
   smtpFrom: '发件人',
-  backupRetentionDays: '备份保留天数'
+  backupRetentionDays: '备份保留天数',
+  smsProvider: '短信网关服务商',
+  smsAccessKeyId: '短信 AccessKey ID',
+  smsAccessKeySecret: '短信 AccessKey Secret',
+  smsSignName: '短信签名',
+  smsTemplateCode: '短信模板 Code',
+  dingtalkNotifyAppKey: '监督agent钉钉应用 AppKey',
+  dingtalkNotifyAppSecret: '监督agent钉钉应用 AppSecret',
+  dingtalkNotifyAgentId: '监督agent钉钉 AgentId',
+  dingtalkNotifyUserIds: '监督agent钉钉接收人 userid（逗号分隔）',
+  dingtalkNotifyDeptIds: '监督agent钉钉接收部门 deptid（逗号分隔）'
 };
+
+// Settings that hold real external credentials, not configuration text: encrypted
+// at rest with the same AES-256-GCM key the credential vault uses, never echoed
+// back to the browser (listSystemSettings masks them), and only decryptable via
+// getDecryptedSystemSetting() for server-side/script use.
+const SECRET_SETTING_KEYS = new Set(['smsAccessKeySecret', 'dingtalkNotifyAppSecret']);
+const SECRET_CONFIGURED_MARKER = '__configured__';
 
 const DEFAULT_WORKSPACE_THEME = {
   mode: 'gradient',
@@ -676,6 +703,12 @@ export async function listSystemSettings() {
     }
   });
 
+  // Secret settings are encrypted at rest and never sent to the browser as
+  // their real value; the UI only needs to know "is one already configured".
+  for (const key of SECRET_SETTING_KEYS) {
+    settings[key] = settings[key] ? SECRET_CONFIGURED_MARKER : '';
+  }
+
   return settings;
 }
 
@@ -684,6 +717,23 @@ export async function updateSystemSettings(value, actorUserId = null) {
   const db = getPool();
 
   for (const [key, settingValue] of Object.entries(settings)) {
+    if (SECRET_SETTING_KEYS.has(key)) {
+      // Blank means "leave the stored secret alone" (the field is rendered as
+      // a password input that's never pre-filled with the real value), so an
+      // empty submit must not overwrite it. The UI's own "configured" marker
+      // is never written back either, since it isn't a real secret value.
+      if (!settingValue || settingValue === SECRET_CONFIGURED_MARKER) continue;
+      await db.query(
+        `INSERT INTO system_settings (setting_key, setting_value, description, updated_by)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           setting_value = VALUES(setting_value),
+           description = VALUES(description),
+           updated_by = VALUES(updated_by)`,
+        [key, encryptSystemSecret(settingValue), SYSTEM_SETTING_LABELS[key] || '', actorUserId]
+      );
+      continue;
+    }
     await db.query(
       `INSERT INTO system_settings (setting_key, setting_value, description, updated_by)
        VALUES (?, ?, ?, ?)
@@ -696,6 +746,36 @@ export async function updateSystemSettings(value, actorUserId = null) {
   }
 
   return listSystemSettings();
+}
+
+// For server-side/script consumers (e.g. the 汐构监督agent script) that need
+// the real secret value, never exposed through the admin HTTP API.
+export async function getDecryptedSystemSetting(key) {
+  if (!SECRET_SETTING_KEYS.has(key)) throw new Error(`${key} 不是加密配置项。`);
+  const db = getPool();
+  const [rows] = await db.query('SELECT setting_value AS settingValue FROM system_settings WHERE setting_key=?', [key]);
+  if (!rows.length || !rows[0].settingValue) return '';
+  return decryptSystemSecret(rows[0].settingValue);
+}
+
+function encryptSystemSecret(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getVaultKey(), iv);
+  cipher.setAAD(Buffer.from('system-settings'));
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  return JSON.stringify({ c: encrypted.toString('base64'), iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64') });
+}
+
+function decryptSystemSecret(stored) {
+  try {
+    const { c, iv, tag } = JSON.parse(stored);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', getVaultKey(), Buffer.from(iv, 'base64'));
+    decipher.setAAD(Buffer.from('system-settings'));
+    decipher.setAuthTag(Buffer.from(tag, 'base64'));
+    return Buffer.concat([decipher.update(Buffer.from(c, 'base64')), decipher.final()]).toString('utf8');
+  } catch {
+    throw new Error('配置项无法解密，请确认 VAULT_ENCRYPTION_KEY 未变更。');
+  }
 }
 
 export async function listAuditLogs(limit = 80) {

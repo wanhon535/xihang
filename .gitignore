@@ -13,6 +13,8 @@ dist/
 **/dist/
 data/uploads/
 data/dingtalk-events.ndjson
+data/reports/
+data/xigou-supervisor-state.json
 .env
 .backend-*.log
 *.log
