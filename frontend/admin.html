@@ -24,6 +24,7 @@
           <div id="nav-operations-items" class="nav-group-items">
             <a id="nav-users" class="active" href="#users" data-admin-panel="users"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20v-1.5A5.5 5.5 0 0 1 9 13h1M16 11a3 3 0 1 0 0-6M15 14h2a4 4 0 0 1 4 4v2h-8v-2a4 4 0 0 1 2-3.5"/></svg></b><span>用户管理</span></a>
             <a id="nav-sites" href="#sites" data-admin-panel="sites"><b><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></b><span>站点矩阵</span></a>
+            <a id="nav-projects" href="#projects" data-admin-panel="projects"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11H3Z"/></svg></b><span>项目管理</span></a>
             <a id="nav-roles" href="#roles" data-admin-panel="roles"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7.5 12 12 4 7.5 12 3ZM4 12l8 4.5 8-4.5M4 16.5 12 21l8-4.5"/></svg></b><span>角色管理</span></a>
             <a id="nav-audit" href="#audit" data-admin-panel="audit"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5M8 10.5l1.7 1.7 3.3-3.4"/></svg></b><span>日志审计</span></a>
           </div>
@@ -155,6 +156,79 @@
         <div id="adminEditor" class="admin-editor"><div class="loading-card"><span class="state-icon" aria-hidden="true">◌</span><strong>正在加载站点配置</strong><small>正在读取工作台入口和分组。</small></div></div>
         <p id="saveStatus" class="hint">数据源：MySQL</p>
       </section>
+
+      <section id="projectsPanel" class="board admin-board admin-panel hidden" data-panel="projects">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">Project Directory</p>
+            <h2>项目管理</h2>
+            <p>成本台账的项目下拉、数据大屏和汐构监督agent共用这份项目列表。</p>
+          </div>
+          <div class="row-actions">
+            <button id="addProjectBtn" class="primary-btn" type="button">新增项目</button>
+          </div>
+        </div>
+        <p id="projectListStatus" class="hint"></p>
+        <div class="admin-editor">
+          <table style="width:100%">
+            <thead><tr><th>项目</th><th>状态</th><th>优先级</th><th>最近更新</th><th>下一个节点</th><th>操作</th></tr></thead>
+            <tbody id="projectRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <dialog id="projectEditDialog" aria-labelledby="projectDialogTitle">
+        <form id="projectForm" class="settings-form">
+          <h2 id="projectDialogTitle" style="grid-column:1/-1">新增项目</h2>
+          <p style="grid-column:1/-1" class="hint">项目名称唯一；成本台账、数据大屏、汐构监督agent都读取这份数据。</p>
+          <label class="field">
+            <span>项目名称 *</span>
+            <input class="field-input" name="name" maxlength="160" required>
+          </label>
+          <label class="field">
+            <span>状态 *</span>
+            <select class="field-input" name="status">
+              <option value="active">进行中</option>
+              <option value="paused">已暂停</option>
+              <option value="archived">已归档</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>优先级 *</span>
+            <select class="field-input" name="priority">
+              <option value="P0">P0</option>
+              <option value="P1">P1</option>
+              <option value="P2" selected>P2</option>
+              <option value="P3">P3</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>最近更新日期</span>
+            <input class="field-input" name="lastUpdate" type="date" min="1000-01-01" max="9999-12-31">
+          </label>
+          <label class="field">
+            <span>下一个节点是什么</span>
+            <input class="field-input" name="nextMilestone" maxlength="255" placeholder="例如：完成一期验收">
+          </label>
+          <label class="field">
+            <span>下一个节点日期</span>
+            <input class="field-input" name="nextMilestoneDate" type="date" min="1000-01-01" max="9999-12-31">
+          </label>
+          <label class="field">
+            <span>负责人手机号（短信预警用）</span>
+            <input class="field-input" name="ownerPhone" maxlength="32" placeholder="可留空">
+          </label>
+          <label class="field" style="grid-column:1/-1">
+            <span>备注 / 当前该推进什么</span>
+            <textarea class="field-input" name="note" maxlength="2000" rows="3" placeholder="给监督agent的“今日任务”文案，留空则用下一个节点代替"></textarea>
+          </label>
+          <p id="projectFormStatus" role="alert" style="grid-column:1/-1"></p>
+          <div class="row-actions" style="grid-column:1/-1;justify-content:flex-end">
+            <button id="projectCancelBtn" type="button" class="plain-btn">取消</button>
+            <button id="projectSaveBtn" type="submit" class="primary-btn">保存</button>
+          </div>
+        </form>
+      </dialog>
 
       <section id="rolesPanel" class="board admin-board admin-panel hidden" data-panel="roles">
         <div class="board-head">

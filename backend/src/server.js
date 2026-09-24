@@ -17,8 +17,10 @@ import {
   createAdminBackupSnapshot,
   createLocalUser,
   createPersonalCredential,
+  createProject,
   createSsoTicket,
   deletePersonalCredential,
+  deleteProject,
   deleteUser,
   findUserById,
   findUserByUsername,
@@ -32,6 +34,7 @@ import {
   initDatabase,
   listAuditLogs,
   listPersonalCredentials,
+  listProjects,
   listSystemSettings,
   listUsers,
   replaceSiteGroups,
@@ -39,6 +42,7 @@ import {
   resetUserPassword,
   touchUserLogin,
   updatePersonalCredential,
+  updateProject,
   updateSystemSettings,
   updateUserHomeLayout,
   updateUserWorkspaceTheme,
@@ -106,7 +110,7 @@ app.use(
 );
 
 app.use('/api/admin/costs', createCostRouter({ db: getPool(), requireLogin, requireAdmin, writeAudit }));
-app.use('/api/admin/dashboard', createDashboardRouter({ db: getPool(), requireLogin, requireAdmin, projectsPath: path.join(rootDir, 'data', 'xigou-projects.json') }));
+app.use('/api/admin/dashboard', createDashboardRouter({ db: getPool(), requireLogin, requireAdmin, listProjects }));
 
 setInterval(pruneRateLimitBuckets, 1000 * 60).unref();
 setInterval(() => {
@@ -711,6 +715,62 @@ app.put('/api/admin/groups', requireLogin, requireAdmin, async (req, res, next) 
     const groups = await replaceSiteGroups(req.body.groups);
     await writeAudit(req, 'sites.save', 'nav_groups', 'all', `保存 ${groups.length} 个站点分组`);
     res.json({ ok: true, groups });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/projects', requireLogin, requireAdmin, async (req, res, next) => {
+  try {
+    res.json({ ok: true, projects: await listProjects() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/projects', requireLogin, requireAdmin, async (req, res, next) => {
+  try {
+    const project = await createProject(req.body, req.session.user.id);
+    await writeAudit(req, 'project.create', 'project', project.id, `创建项目 ${project.name}`);
+    res.status(201).json({ ok: true, project });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/admin/projects/:id', requireLogin, requireAdmin, async (req, res, next) => {
+  try {
+    const projectId = parsePositiveId(req.params.id);
+    if (!projectId) {
+      res.status(400).json({ ok: false, message: '项目 ID 无效。' });
+      return;
+    }
+    const project = await updateProject(projectId, req.body, req.session.user.id);
+    if (!project) {
+      res.status(404).json({ ok: false, message: '项目不存在。' });
+      return;
+    }
+    await writeAudit(req, 'project.update', 'project', project.id, `更新项目 ${project.name}`);
+    res.json({ ok: true, project });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/admin/projects/:id', requireLogin, requireAdmin, async (req, res, next) => {
+  try {
+    const projectId = parsePositiveId(req.params.id);
+    if (!projectId) {
+      res.status(400).json({ ok: false, message: '项目 ID 无效。' });
+      return;
+    }
+    const deleted = await deleteProject(projectId);
+    if (!deleted) {
+      res.status(404).json({ ok: false, message: '项目不存在。' });
+      return;
+    }
+    await writeAudit(req, 'project.delete', 'project', projectId, '删除项目');
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }

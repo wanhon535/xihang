@@ -297,6 +297,22 @@ form.addEventListener('submit', saveEntry);
 $('logoutBtn').addEventListener('click', async () => {
   try { await logout(); } catch (error) { if (!handleAuth(error)) status(`退出失败：${error.message}`, true); }
 });
+// "项目"栏位仍是自由文本（历史记录里可能有没在项目管理里登记过的名字），这里只是
+// 把管理中枢"项目管理"里维护的项目名喂给输入框的自动完成，不强制必须从列表选。
+async function loadProjectSuggestions() {
+  try {
+    const payload = await api('/api/admin/projects');
+    const datalist = $('projectSuggestions');
+    datalist.replaceChildren(...(payload.projects || []).map((project) => {
+      const option = document.createElement('option');
+      option.value = project.name;
+      return option;
+    }));
+  } catch {
+    // 拉取失败不影响录入成本，用户仍可以手打项目名。
+  }
+}
+
 async function init() {
   try {
     user = await requireUser();
@@ -309,6 +325,7 @@ async function init() {
     setWorkspaceUser(user);
     $('userName').textContent = user.nick || user.username || '管理员';
     $('ledgerWorkspace').hidden = false;
+    void loadProjectSuggestions();
     await loadEntries();
   } catch (error) {
     if (!handleAuth(error)) status(`身份验证失败：${error.message}。请重新加载页面。`, true);

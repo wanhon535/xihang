@@ -43,17 +43,22 @@ function startClock() {
 
 // ---- Count-up numbers: cheap visual interest, not just static labels ----
 function animateCount(el, target, { decimals = 0 } = {}) {
+  const format = (value) => value.toLocaleString('zh-CN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   const from = Number(el.dataset.target || 0);
   const to = Number(target) || 0;
   el.dataset.target = to;
-  if (from === to) { el.textContent = to.toLocaleString('zh-CN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); return; }
+  // requestAnimationFrame is throttled/paused for hidden or unfocused tabs (e.g. the
+  // page loaded or auto-refreshed in a background tab), which would otherwise leave
+  // the number stuck at its starting value indefinitely instead of just skipping the
+  // animation.
+  if (from === to || document.hidden) { el.textContent = format(to); return; }
   const duration = 700;
   const start = performance.now();
   function step(now) {
     const progress = Math.min(1, (now - start) / duration);
     const eased = 1 - (1 - progress) ** 3;
     const value = from + (to - from) * eased;
-    el.textContent = value.toLocaleString('zh-CN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    el.textContent = format(value);
     if (progress < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);

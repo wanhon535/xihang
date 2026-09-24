@@ -1,3 +1,14 @@
+/* Every page here is a full server-rendered navigation (no client router), so a
+   plain link click normally hard-cuts to a blank frame before the next page's
+   own styling kicks in. Opting into cross-document view transitions makes
+   supporting browsers crossfade instead — a real fix for the "flashes black
+   between pages" complaint, not just a cosmetic one. Unsupported browsers
+   silently ignore this and keep their previous (still cache-primed, see the
+   inline theme-snapshot bootstrap script in each page's <head>) behavior. */
+@view-transition {
+  navigation: auto;
+}
+
 :root {
   color-scheme: light;
   --bg: #f5f7fb;
