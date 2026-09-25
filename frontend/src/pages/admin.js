@@ -1,5 +1,18 @@
 import { setWorkspaceUser, syncActiveHeading, setNotifications } from '../shell.js';
 import { api, logout, redirectToLogin, requireUser } from '../api.js';
+import { showToast } from '../ui-feedback.js';
+
+// Lets a dialog's close-animation actually play: dialog.close() otherwise
+// removes [open] synchronously, so the CSS transition on dialog[open] never
+// gets a "before" frame to animate from.
+function closeDialogAnimated(dialog) {
+  if (!dialog.open || dialog.classList.contains('dialog-closing')) return;
+  dialog.classList.add('dialog-closing');
+  window.setTimeout(() => {
+    dialog.classList.remove('dialog-closing');
+    dialog.close();
+  }, 160);
+}
 
 const editor = document.querySelector('#adminEditor');
 const saveBtn = document.querySelector('#saveBtn');
@@ -36,6 +49,7 @@ const settingsStatusNodes = [
   document.querySelector('#emailSettingsStatus'),
   document.querySelector('#securitySettingsStatus'),
   document.querySelector('#automationSettingsStatus'),
+  document.querySelector('#rosterSettingsStatus'),
   document.querySelector('#backupStatus')
 ].filter(Boolean);
 const addProjectBtn = document.querySelector('#addProjectBtn');
@@ -47,6 +61,19 @@ const projectFormStatus = document.querySelector('#projectFormStatus');
 const projectCancelBtn = document.querySelector('#projectCancelBtn');
 const projectSaveBtn = document.querySelector('#projectSaveBtn');
 const projectFields = ['name', 'status', 'priority', 'lastUpdate', 'nextMilestone', 'nextMilestoneDate', 'ownerPhone', 'note'];
+const siteScopeDialog = document.querySelector('#siteScopeDialog');
+const siteScopeHint = document.querySelector('#siteScopeDialogHint');
+const siteScopeRolesBox = document.querySelector('#siteScopeRoles');
+const siteScopeUsersBox = document.querySelector('#siteScopeUsers');
+const siteScopeCancelBtn = document.querySelector('#siteScopeCancelBtn');
+const siteScopeSaveBtn = document.querySelector('#siteScopeSaveBtn');
+const rosterSettingsForm = document.querySelector('#rosterSettingsForm');
+const rosterSettingsStatus = document.querySelector('#rosterSettingsStatus');
+const rosterSyncBtn = document.querySelector('#rosterSyncBtn');
+const rosterSyncStatus = document.querySelector('#rosterSyncStatus');
+const wikiSyncBtn = document.querySelector('#wikiSyncBtn');
+const wikiSyncStatus = document.querySelector('#wikiSyncStatus');
+const wikiDocListBody = document.querySelector('#wikiDocListBody');
 const statTotalUsers = document.querySelector('#stat-total-users');
 const statOnlineUsers = document.querySelector('#stat-online-users');
 const statNewUsers = document.querySelector('#stat-new-users');
@@ -74,12 +101,16 @@ const settingFields = {
   dingtalkNotifyAppSecret: document.querySelector('#settingDingtalkNotifyAppSecret'),
   dingtalkNotifyAgentId: document.querySelector('#settingDingtalkNotifyAgentId'),
   dingtalkNotifyUserIds: document.querySelector('#settingDingtalkNotifyUserIds'),
-  dingtalkNotifyDeptIds: document.querySelector('#settingDingtalkNotifyDeptIds')
+  dingtalkNotifyDeptIds: document.querySelector('#settingDingtalkNotifyDeptIds'),
+  dingtalkRosterAppKey: document.querySelector('#settingDingtalkRosterAppKey'),
+  dingtalkRosterAppSecret: document.querySelector('#settingDingtalkRosterAppSecret'),
+  dingtalkRosterCorpId: document.querySelector('#settingDingtalkRosterCorpId'),
+  dingtalkWikiOperatorId: document.querySelector('#settingDingtalkWikiOperatorId')
 };
 // Secret fields: the backend never returns the real value, only a "configured" marker.
 // The password input stays blank (so a blank submit means "leave it alone") and shows
 // the marker as a placeholder hint instead of a value.
-const SECRET_SETTING_KEYS = new Set(['smsAccessKeySecret', 'dingtalkNotifyAppSecret']);
+const SECRET_SETTING_KEYS = new Set(['smsAccessKeySecret', 'dingtalkNotifyAppSecret', 'dingtalkRosterAppSecret']);
 const SECRET_CONFIGURED_MARKER = '__configured__';
 
 const actionLabels = {
@@ -92,7 +123,9 @@ const actionLabels = {
   'backup.export': '导出快照',
   'project.create': '创建项目',
   'project.update': '更新项目',
-  'project.delete': '删除项目'
+  'project.delete': '删除项目',
+  'dingtalk.roster_sync': '同步钉钉花名册',
+  'dingtalk.wiki_sync': '同步钉钉知识库'
 };
 
 let currentUser = null;
@@ -103,15 +136,33 @@ let settings = {};
 let auditLogs = [];
 let projects = [];
 let editingProject = null;
+let autoSaveTimer = null;
+let sitesLoaded = false;
 
 logoutBtn.addEventListener('click', logout);
 addGroupBtn.addEventListener('click', () => {
   groups.push({ name: '', description: '', sites: [] });
   renderGroups();
+  scheduleAutoSave();
 });
-saveBtn.addEventListener('click', saveGroups);
+saveBtn.addEventListener('click', () => saveGroups(false));
+siteScopeCancelBtn.addEventListener('click', () => closeDialogAnimated(siteScopeDialog));
+siteScopeSaveBtn.addEventListener('click', () => {
+  closeDialogAnimated(siteScopeDialog);
+  renderGroups();
+  scheduleAutoSave();
+  showToast('可见范围已更新', siteScopeSaveBtn);
+});
+siteScopeDialog.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeDialogAnimated(siteScopeDialog);
+});
 addProjectBtn.addEventListener('click', () => openProjectEditor(null));
-projectCancelBtn.addEventListener('click', () => { if (!projectForm.dataset.saving) projectDialog.close(); });
+projectCancelBtn.addEventListener('click', () => { if (!projectForm.dataset.saving) closeDialogAnimated(projectDialog); });
+projectDialog.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  if (!projectForm.dataset.saving) closeDialogAnimated(projectDialog);
+});
 projectForm.addEventListener('submit', saveProject);
 createUserForm.addEventListener('submit', createUser);
 adminSearch.addEventListener('input', renderUsers);
@@ -123,6 +174,9 @@ settingsForm.addEventListener('submit', saveSettings);
 emailSettingsForm.addEventListener('submit', saveSettings);
 securitySettingsForm.addEventListener('submit', saveSettings);
 automationSettingsForm.addEventListener('submit', saveSettings);
+rosterSettingsForm.addEventListener('submit', saveSettings);
+rosterSyncBtn.addEventListener('click', syncDingTalkRoster);
+wikiSyncBtn.addEventListener('click', syncDingTalkWiki);
 refreshAuditBtn.addEventListener('click', refreshAuditLogs);
 refreshLogsBtn.addEventListener('click', refreshAuditLogs);
 refreshMonitorBtn.addEventListener('click', refreshOverview);
@@ -195,6 +249,7 @@ async function init() {
     projects = projectPayload.projects || [];
 
     renderGroups();
+    sitesLoaded = true;
     renderUsers();
     renderStats();
     renderRoleMatrix();
@@ -202,6 +257,7 @@ async function init() {
     renderMonitor();
     renderAuditLogs();
     renderProjects();
+    loadWikiDocs();
     showPanel(getInitialPanel());
   } catch (error) {
     if (error.status === 401) {
@@ -281,6 +337,7 @@ async function createUser(event) {
     newRole.value = 'member';
     await Promise.all([refreshUsers(), refreshOverview(), refreshAuditLogs()]);
     userStatus.textContent = '成员已创建。首次登录会先进入改密页面。';
+    showToast('成员已创建', createUserForm.querySelector('.primary-btn'));
   } catch (error) {
     userStatus.textContent = error.message;
   }
@@ -399,6 +456,7 @@ async function saveUser(userId) {
     });
     await Promise.all([refreshUsers(), refreshOverview(), refreshAuditLogs()]);
     userStatus.textContent = '成员信息已保存。';
+    showToast('已保存', row);
   } catch (error) {
     userStatus.textContent = error.message;
   }
@@ -409,6 +467,7 @@ async function resetPassword(userId) {
   if (!password) {
     return;
   }
+  const row = userList.querySelector(`[data-user-id="${userId}"]`);
   userStatus.textContent = '正在重置临时密码...';
 
   try {
@@ -418,6 +477,7 @@ async function resetPassword(userId) {
     });
     await Promise.all([refreshUsers(), refreshAuditLogs()]);
     userStatus.textContent = '临时密码已重置。该成员下次登录会先进入改密页面。';
+    showToast('临时密码已重置', row);
   } catch (error) {
     userStatus.textContent = error.message;
   }
@@ -434,6 +494,7 @@ async function deleteSelectedUser(userId) {
     await api(`/api/admin/users/${userId}`, { method: 'DELETE' });
     await Promise.all([refreshUsers(), refreshOverview(), refreshAuditLogs()]);
     userStatus.textContent = '成员账号已删除。';
+    showToast('成员账号已删除', userStatus);
   } catch (error) {
     userStatus.textContent = error.message;
   }
@@ -461,10 +522,12 @@ function renderGroups() {
       group.sites = group.sites || [];
       group.sites.push({ name: '', url: '', description: '', tags: [], visibility: 'all', allowedRoles: [], allowedUserIds: [] });
       renderGroups();
+      scheduleAutoSave();
     });
     removeGroupBtn.addEventListener('click', () => {
       groups.splice(groupIndex, 1);
       renderGroups();
+      scheduleAutoSave();
     });
 
     actions.append(addSiteBtn, removeGroupBtn);
@@ -485,10 +548,17 @@ function renderGroups() {
         event.preventDefault();
         group.sites.splice(siteIndex, 1);
         renderGroups();
+        scheduleAutoSave();
       });
 
       siteTop.append(siteTitle, removeSiteBtn);
       siteCard.appendChild(siteTop);
+      if (!site.name || !site.url) {
+        // Matches the backend's own filter (normalizeSiteGroups drops any
+        // site missing name/url) — surfaced here so an incomplete entry
+        // doesn't just silently fail to persist without explanation.
+        siteCard.appendChild(el('p', 'hint', '还没保存：填写入口名称和访问地址后才会存到 MySQL。'));
+      }
       siteCard.appendChild(field('入口名称', input(site.name, '例如：运营后台', (value) => (site.name = value))));
       siteCard.appendChild(field('访问地址', input(site.url, 'https://...', (value) => (site.url = value))));
       siteCard.appendChild(field('入口说明', textarea(site.description, '一句话说明用途', (value) => (site.description = value))));
@@ -512,21 +582,44 @@ function renderGroups() {
   });
 }
 
-async function saveGroups() {
+function scheduleAutoSave() {
+  if (!sitesLoaded) return;
+  clearTimeout(autoSaveTimer);
+  saveStatus.textContent = '有修改，准备自动保存…';
+  autoSaveTimer = setTimeout(() => saveGroups(true), 900);
+}
+
+async function saveGroups(isAuto = false) {
+  clearTimeout(autoSaveTimer);
   saveBtn.disabled = true;
-  saveStatus.textContent = '正在保存...';
+  saveStatus.textContent = isAuto ? '正在自动保存...' : '正在保存...';
 
   try {
     const payload = await api('/api/admin/groups', {
       method: 'PUT',
       body: JSON.stringify({ groups })
     });
+    const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     groups = payload.groups;
-    renderGroups();
+
+    if (isAuto) {
+      // Autosave must never rebuild the editor DOM: renderGroups() replaces
+      // every <input>/<textarea> in the panel, which — if the user is mid
+      // keystroke when the debounce fires, a completely normal timing —
+      // silently rips focus out of whatever field they're typing in. We
+      // still refresh `groups` in the background so a later manual save or
+      // structural edit starts from the server's canonical copy, but we
+      // leave the visible DOM (and the user's cursor) untouched.
+      saveStatus.textContent = `已自动保存到 MySQL（${time}）`;
+    } else {
+      renderGroups();
+      saveStatus.textContent = `已保存到 MySQL（${time}），成员刷新工作台即可看到新的入口分组。`;
+      showToast('已保存', saveStatus);
+    }
+
     await Promise.all([refreshOverview(), refreshAuditLogs()]);
-    saveStatus.textContent = '已保存到 MySQL，成员刷新工作台即可看到新的入口分组。';
   } catch (error) {
-    saveStatus.textContent = error.message;
+    saveStatus.textContent = `${isAuto ? '自动保存' : '保存'}失败：${error.message}`;
   } finally {
     saveBtn.disabled = false;
   }
@@ -555,13 +648,40 @@ function renderSiteAccessEditor(site) {
       site.allowedRoles = ['member'];
     }
     renderGroups();
+    scheduleAutoSave();
+    if (site.visibility === 'roles' || site.visibility === 'users') {
+      openSiteScopeDialog(site);
+    }
   });
 
   top.append(title, visibilitySelect);
   wrapper.appendChild(top);
 
+  if (site.visibility === 'roles' || site.visibility === 'users') {
+    const summary = el('div', 'site-access-summary');
+    const summaryText =
+      site.visibility === 'roles'
+        ? `已选 ${site.allowedRoles.length} 个角色`
+        : `已选 ${site.allowedUserIds.length} 位成员`;
+    summary.appendChild(el('span', '', summaryText));
+    const editBtn = el('button', 'plain-btn small', '配置可见范围');
+    editBtn.type = 'button';
+    editBtn.addEventListener('click', () => openSiteScopeDialog(site));
+    summary.appendChild(editBtn);
+    wrapper.appendChild(summary);
+  }
+
+  return wrapper;
+}
+
+function openSiteScopeDialog(site) {
+  siteScopeRolesBox.innerHTML = '';
+  siteScopeUsersBox.innerHTML = '';
+
   if (site.visibility === 'roles') {
-    const roleList = el('div', 'site-access-checks');
+    siteScopeHint.textContent = '选择哪些角色能在工作台里看到这个入口。';
+    siteScopeRolesBox.hidden = false;
+    siteScopeUsersBox.hidden = true;
     [
       ['member', '普通成员'],
       ['admin', '管理员']
@@ -574,17 +694,16 @@ function renderSiteAccessEditor(site) {
         site.allowedRoles = toggleListValue(site.allowedRoles, value, checkbox.checked);
       });
       checkboxLabel.append(checkbox, el('span', '', label));
-      roleList.appendChild(checkboxLabel);
+      siteScopeRolesBox.appendChild(checkboxLabel);
     });
-    wrapper.appendChild(roleList);
-  }
-
-  if (site.visibility === 'users') {
-    const memberList = el('div', 'site-member-grid');
+  } else if (site.visibility === 'users') {
+    siteScopeHint.textContent = '选择哪些成员能在工作台里看到这个入口。';
+    siteScopeRolesBox.hidden = true;
+    siteScopeUsersBox.hidden = false;
     const selectableUsers = users.filter((user) => user.status !== 'disabled');
 
     if (selectableUsers.length === 0) {
-      memberList.appendChild(el('span', 'site-access-empty', '暂无可分配成员'));
+      siteScopeUsersBox.appendChild(el('span', 'site-access-empty', '暂无可分配成员'));
     }
 
     selectableUsers.forEach((user) => {
@@ -597,12 +716,11 @@ function renderSiteAccessEditor(site) {
         site.allowedUserIds = toggleListValue(site.allowedUserIds, userId, checkbox.checked);
       });
       checkboxLabel.append(checkbox, el('span', '', userDisplayName(user)));
-      memberList.appendChild(checkboxLabel);
+      siteScopeUsersBox.appendChild(checkboxLabel);
     });
-    wrapper.appendChild(memberList);
   }
 
-  return wrapper;
+  siteScopeDialog.showModal();
 }
 
 function fillSettingsForm() {
@@ -633,10 +751,10 @@ function readSettingsFromForm() {
 
 async function saveSettings(event) {
   event.preventDefault();
-  await saveSettingsFromCurrent('配置已保存。');
+  await saveSettingsFromCurrent('配置已保存。', event.submitter);
 }
 
-async function saveSettingsFromCurrent(successText) {
+async function saveSettingsFromCurrent(successText, trigger) {
   setSettingsStatus('正在保存配置...');
   try {
     const payload = await api('/api/admin/settings', {
@@ -647,6 +765,7 @@ async function saveSettingsFromCurrent(successText) {
     fillSettingsForm();
     await Promise.all([refreshOverview(), refreshAuditLogs()]);
     setSettingsStatus(successText);
+    showToast(successText, trigger || settingsStatus);
   } catch (error) {
     setSettingsStatus(error.message);
   }
@@ -692,6 +811,78 @@ function renderAuditLogs() {
   auditList.innerHTML = html;
   operationLogList.innerHTML = html;
   setNotifications(auditLogs.map(log => ({ title: `${actionLabels[log.action] || log.action}${log.summary ? ' · ' + log.summary : ''}`, time: formatDate(log.createdAt) })));
+  renderRosterStatus();
+}
+
+function renderRosterStatus() {
+  const lastSync = auditLogs.find((log) => log.action === 'dingtalk.roster_sync');
+  rosterSyncStatus.textContent = lastSync
+    ? `上次同步：${formatDate(lastSync.createdAt)} · ${lastSync.summary || ''}`
+    : '还没有同步过。';
+}
+
+async function syncDingTalkRoster() {
+  rosterSyncBtn.disabled = true;
+  rosterSyncStatus.textContent = '正在同步钉钉花名册...';
+
+  try {
+    const payload = await api('/api/admin/dingtalk/roster-sync', { method: 'POST' });
+    const { total, created, updated, disabled } = payload.stats;
+    rosterSyncStatus.textContent = `同步完成：花名册共 ${total} 人，新建 ${created}，刷新 ${updated}，禁用 ${disabled}。`;
+    await Promise.all([refreshUsers(), refreshAuditLogs()]);
+  } catch (error) {
+    rosterSyncStatus.textContent = `同步失败：${error.message}`;
+  } finally {
+    rosterSyncBtn.disabled = false;
+  }
+}
+
+async function syncDingTalkWiki() {
+  wikiSyncBtn.disabled = true;
+  wikiSyncStatus.textContent = '正在同步钉钉知识库...';
+
+  try {
+    const payload = await api('/api/admin/dingtalk/wiki-sync', { method: 'POST' });
+    const { workspaces, docs } = payload.stats;
+    wikiSyncStatus.textContent = `同步完成：${workspaces} 个知识库，${docs} 篇文档。`;
+    await Promise.all([loadWikiDocs(), refreshAuditLogs()]);
+  } catch (error) {
+    wikiSyncStatus.textContent = `同步失败：${error.message}`;
+  } finally {
+    wikiSyncBtn.disabled = false;
+  }
+}
+
+async function loadWikiDocs() {
+  try {
+    const payload = await api('/api/knowledge-base');
+    renderWikiDocs(payload.docs || []);
+  } catch {
+    // Knowledge-base list is secondary content on this panel; a failed
+    // refresh shouldn't block the rest of the admin console from loading.
+  }
+}
+
+function renderWikiDocs(docs) {
+  if (docs.length === 0) {
+    wikiDocListBody.innerHTML = '<div class="empty-card">还没有同步过知识库文档。</div>';
+    return;
+  }
+
+  wikiDocListBody.innerHTML = docs
+    .map(
+      (doc) => `<article class="audit-row">
+  <div>
+    <strong>${escapeHtml(doc.name || '未命名文档')}</strong>
+    <span>${escapeHtml(doc.workspaceName || '')}</span>
+  </div>
+  <div>
+    <a href="${escapeHtml(doc.url)}" target="_blank" rel="noopener noreferrer">在钉钉中打开</a>
+    <small>${escapeHtml(formatDate(doc.modifiedTime))}</small>
+  </div>
+</article>`
+    )
+    .join('');
 }
 
 function renderAuditRow(log) {
@@ -715,6 +906,7 @@ async function createBackup() {
     const payload = await api('/api/admin/backup');
     backupPreview.textContent = JSON.stringify(payload.snapshot, null, 2);
     await refreshAuditLogs();
+    showToast('配置快照已生成', backupBtn);
   } catch (error) {
     backupPreview.textContent = error.message;
   }
@@ -777,7 +969,10 @@ function input(value, placeholder, onInput) {
   const node = el('input', 'field-input');
   node.value = value || '';
   node.placeholder = placeholder;
-  node.addEventListener('input', () => onInput(node.value));
+  node.addEventListener('input', () => {
+    onInput(node.value);
+    scheduleAutoSave();
+  });
   return node;
 }
 
@@ -786,7 +981,10 @@ function textarea(value, placeholder, onInput) {
   node.value = value || '';
   node.placeholder = placeholder;
   node.rows = 2;
-  node.addEventListener('input', () => onInput(node.value));
+  node.addEventListener('input', () => {
+    onInput(node.value);
+    scheduleAutoSave();
+  });
   return node;
 }
 
@@ -874,7 +1072,8 @@ async function saveProject(event) {
       : [...projects, result.project];
     renderProjects();
     await refreshAuditLogs();
-    projectDialog.close();
+    showToast(editingProject ? '项目已更新' : '项目已创建', projectSaveBtn);
+    closeDialogAnimated(projectDialog);
   } catch (error) {
     projectFormStatus.textContent = error.message;
   } finally {

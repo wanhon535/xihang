@@ -22,9 +22,12 @@ import {
   deletePersonalCredential,
   deleteProject,
   deleteUser,
+  disableStaleDingTalkUsers,
+  findUserByDingTalkUserId,
   findUserById,
   findUserByUsername,
   getAdminOverview,
+  getDecryptedSystemSetting,
   getPool,
   getPersonalCredentialSecret,
   getSiteGroups,
@@ -33,10 +36,12 @@ import {
   getUserWorkspaceTheme,
   initDatabase,
   listAuditLogs,
+  listDingTalkDocs,
   listPersonalCredentials,
   listProjects,
   listSystemSettings,
   listUsers,
+  replaceDingTalkDocs,
   replaceSiteGroups,
   recordAuditLog,
   resetUserPassword,
@@ -47,16 +52,30 @@ import {
   updateUserHomeLayout,
   updateUserWorkspaceTheme,
   updateUser,
-  upsertDingTalkUser
+  upsertDingTalkUser,
+  upsertRosterUser
 } from './db.js';
 import { MySqlSessionStore } from './mysql-session-store.js';
 import { createCostRouter } from './cost-ledger.js';
 import { createDashboardRouter } from './dashboard.js';
+import { syncDingTalkRoster } from './dingtalk-roster.js';
+import { syncDingTalkWiki } from './dingtalk-wiki.js';
 
 dotenv.config();
 
 if (process.env.DINGTALK_FORCE_IPV4 !== 'false') {
   dns.setDefaultResultOrder('ipv4first');
+}
+
+// Warning only, never a hard exit here: session cookies, the DingTalk login
+// state/handoff signatures, and the vault/system-secret encryption key all
+// derive from these two values. Left at the built-in fallback, anyone who
+// has read this source file can forge them.
+if (!process.env.SESSION_SECRET) {
+  console.warn('[security] 未配置 SESSION_SECRET，正在使用内置默认值——session、钉钉登录跳转签名都可能被伪造，请在 .env 里设置一个长随机值。');
+}
+if (!process.env.VAULT_ENCRYPTION_KEY && !process.env.SESSION_SECRET) {
+  console.warn('[security] 未配置 VAULT_ENCRYPTION_KEY，星钥库和系统密钥的加密正在使用内置默认密钥，请在 .env 里单独设置一个长随机值。');
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -684,6 +703,73 @@ app.put('/api/admin/settings', requireLogin, requireAdmin, async (req, res, next
   }
 });
 
+app.post('/api/admin/dingtalk/roster-sync', requireLogin, requireAdmin, async (req, res, next) => {
+  try {
+    const settings = await listSystemSettings();
+    // 管理中枢没有单独配置同步专用应用时，直接复用登录应用已有的 DingTalk 凭证
+    // （.env 里的 DINGTALK_CLIENT_ID/SECRET + DINGTALK_CORP_ID）——同一个应用只要
+    // 在钉钉开放平台勾了「通讯录管理只读」权限，就能兼顾登录和花名册同步两件事，
+    // 不需要为此专门再建一个应用。
+    const appKey = settings.dingtalkRosterAppKey || getDingTalkClientId();
+    const corpId = settings.dingtalkRosterCorpId || process.env.DINGTALK_CORP_ID || '';
+    const appSecret = (await getDecryptedSystemSetting('dingtalkRosterAppSecret')) || getDingTalkClientSecret();
+
+    const stats = await syncDingTalkRoster({
+      appKey,
+      appSecret,
+      corpId,
+      db: { findUserByDingTalkUserId, upsertRosterUser, disableStaleDingTalkUsers }
+    });
+
+    await writeAudit(
+      req,
+      'dingtalk.roster_sync',
+      'dingtalk_roster',
+      'all',
+      `同步钉钉花名册：新建 ${stats.created}，更新 ${stats.updated}，禁用 ${stats.disabled}`
+    );
+    res.json({ ok: true, stats });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/dingtalk/wiki-sync', requireLogin, requireAdmin, async (req, res, next) => {
+  try {
+    const settings = await listSystemSettings();
+    // 同上：默认复用登录应用的凭证，应用需要额外勾「知识库读权限」「知识库节点读权限」。
+    const appKey = settings.dingtalkRosterAppKey || getDingTalkClientId();
+    const operatorId = settings.dingtalkWikiOperatorId || '';
+    const appSecret = (await getDecryptedSystemSetting('dingtalkRosterAppSecret')) || getDingTalkClientSecret();
+
+    const stats = await syncDingTalkWiki({
+      appKey,
+      appSecret,
+      operatorId,
+      db: { replaceDingTalkDocs }
+    });
+
+    await writeAudit(
+      req,
+      'dingtalk.wiki_sync',
+      'dingtalk_docs',
+      'all',
+      `同步钉钉知识库：${stats.workspaces} 个知识库，${stats.docs} 篇文档`
+    );
+    res.json({ ok: true, stats });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/knowledge-base', requireLogin, async (req, res, next) => {
+  try {
+    res.json({ ok: true, docs: await listDingTalkDocs() });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/admin/audit-logs', requireLogin, requireAdmin, async (req, res, next) => {
   try {
     res.json({ ok: true, logs: await listAuditLogs(req.query.limit) });
@@ -1160,14 +1246,24 @@ function isAllowedFrontendOrigin(origin) {
 
 function isLocalDevHost(hostname) {
   const host = String(hostname || '').toLowerCase();
-  return (
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === '::1' ||
-    host.startsWith('192.168.') ||
-    host.startsWith('10.') ||
-    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
-  );
+  if (host === 'localhost' || host === '::1') {
+    return true;
+  }
+
+  // Must be a syntactically complete IPv4 address before checking private
+  // ranges — a plain startsWith('192.168.') would also match a hostile
+  // domain like "192.168.0.1.attacker.com", which is not a private IP at
+  // all. Requiring the full dotted-quad closes that spoofing path.
+  const match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) {
+    return false;
+  }
+  const octets = match.slice(1).map(Number);
+  if (octets.some((octet) => octet > 255)) {
+    return false;
+  }
+  const [a, b] = octets;
+  return a === 127 || (a === 192 && b === 168) || a === 10 || (a === 172 && b >= 16 && b <= 31);
 }
 
 function createState(req, frontendOriginOverride = '') {
@@ -1386,6 +1482,13 @@ function createLoginHandoffToken(userId) {
   return `${payload}.${signLoginHandoff(payload)}`;
 }
 
+// Tracks handoff nonces already redeemed so a captured token can't be
+// replayed for the rest of its 2-minute window — mirrors the one-time
+// consumption the SSO ticket flow already does in the database, just kept
+// in memory here since the window is short and the value never needs to
+// survive a restart.
+const consumedHandoffNonces = new Map();
+
 function verifyLoginHandoffToken(token) {
   const [payload, signature] = String(token || '').split('.');
   if (!payload || !signature || !safeEqual(signature, signLoginHandoff(payload))) {
@@ -1395,9 +1498,22 @@ function verifyLoginHandoffToken(token) {
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     const userId = Number(data.userId);
-    if (!Number.isSafeInteger(userId) || userId <= 0 || Number(data.expiresAt || 0) < Date.now()) {
+    const expiresAt = Number(data.expiresAt || 0);
+    if (!Number.isSafeInteger(userId) || userId <= 0 || expiresAt < Date.now()) {
       return null;
     }
+    if (!data.nonce || consumedHandoffNonces.has(data.nonce)) {
+      return null;
+    }
+
+    consumedHandoffNonces.set(data.nonce, expiresAt);
+    if (consumedHandoffNonces.size > 500) {
+      const now = Date.now();
+      for (const [nonce, storedExpiresAt] of consumedHandoffNonces) {
+        if (storedExpiresAt < now) consumedHandoffNonces.delete(nonce);
+      }
+    }
+
     return userId;
   } catch {
     return null;

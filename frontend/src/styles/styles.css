@@ -186,6 +186,14 @@ h3 {
   transform: translateY(-1px);
 }
 
+.primary-btn:active,
+.plain-btn:active,
+.danger-btn:active,
+.reference-submit:active {
+  transform: scale(0.97);
+  transition-duration: 60ms;
+}
+
 .plain-btn,
 .console-user button {
   color: var(--ink-2);
@@ -1725,6 +1733,15 @@ textarea.field-input {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.site-access-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .access-check {

@@ -23,6 +23,7 @@
           <button id="nav-operations-toggle" class="nav-group-title" type="button">运营管理</button>
           <div id="nav-operations-items" class="nav-group-items">
             <a id="nav-users" class="active" href="#users" data-admin-panel="users"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20v-1.5A5.5 5.5 0 0 1 9 13h1M16 11a3 3 0 1 0 0-6M15 14h2a4 4 0 0 1 4 4v2h-8v-2a4 4 0 0 1 2-3.5"/></svg></b><span>用户管理</span></a>
+            <a id="nav-roster" href="#roster" data-admin-panel="roster"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19v-1a5 5 0 0 1 5-5h1M14 19v-1.5a4 4 0 0 1 4-4h1M9 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM17.5 9a2.3 2.3 0 1 0 0-4.6 2.3 2.3 0 0 0 0 4.6Z"/></svg></b><span>人员同步</span></a>
             <a id="nav-sites" href="#sites" data-admin-panel="sites"><b><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></b><span>站点矩阵</span></a>
             <a id="nav-projects" href="#projects" data-admin-panel="projects"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11H3Z"/></svg></b><span>项目管理</span></a>
             <a id="nav-roles" href="#roles" data-admin-panel="roles"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7.5 12 12 4 7.5 12 3ZM4 12l8 4.5 8-4.5M4 16.5 12 21l8-4.5"/></svg></b><span>角色管理</span></a>
@@ -141,6 +142,52 @@
         <p id="userStatus" class="hint">账号创建后会自动启用首次改密。</p>
       </section>
 
+      <section id="rosterPanel" class="board admin-board admin-panel hidden" data-panel="roster">
+        <div class="board-head">
+          <div>
+            <p class="panel-label">DingTalk Roster &amp; Wiki</p>
+            <h2>人员同步</h2>
+            <p>用同一个钉钉企业内部应用只读同步两类数据：通讯录花名册（建号/禁用）和知识库文档列表（只读+跳转）。都不会回写钉钉。</p>
+          </div>
+        </div>
+        <form id="rosterSettingsForm" class="settings-form">
+          <p class="hint" style="grid-column:1/-1">下面三项都留空的话，默认直接复用「安全策略」里钉钉登录用的同一个应用凭证（.env 的 DINGTALK_CLIENT_ID/SECRET + DINGTALK_CORP_ID），不需要重新建应用——只要在钉钉开放平台给这个应用加上「通讯录管理只读」「知识库读权限」「知识库节点读权限」即可。只有想用单独一个应用做同步时才需要填下面几项。</p>
+          <label class="field">
+            <span>企业 CorpId（可留空，默认用 .env 的 DINGTALK_CORP_ID）</span>
+            <input id="settingDingtalkRosterCorpId" class="field-input" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>AppKey（可留空，默认用登录应用的 Client ID）</span>
+            <input id="settingDingtalkRosterAppKey" class="field-input" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>AppSecret（可留空，默认用登录应用的 Client Secret）</span>
+            <input id="settingDingtalkRosterAppSecret" class="field-input" type="password" autocomplete="off" placeholder="未配置" />
+          </label>
+          <label class="field">
+            <span>知识库同步操作人 unionId</span>
+            <input id="settingDingtalkWikiOperatorId" class="field-input" autocomplete="off" placeholder="通常填管理员本人的钉钉 unionId，这个必填" />
+          </label>
+          <p class="hint" style="grid-column:1/-1">知识库的读取范围取决于「操作人」这个人在钉钉里能看到哪些知识库，不是全公司无差别拉取，这一项没有默认值，必须填。密钥留空提交表示不修改已保存的值。</p>
+          <button class="plain-btn" type="submit">保存同步配置</button>
+        </form>
+        <p id="rosterSettingsStatus" class="hint"></p>
+
+        <div class="admin-card-top" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+          <strong>通讯录花名册</strong>
+          <button id="rosterSyncBtn" class="primary-btn small" type="button">立即同步花名册</button>
+        </div>
+        <p id="rosterSyncStatus" class="hint">还没有同步过。</p>
+
+        <div class="admin-card-top" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
+          <strong>知识库文档</strong>
+          <button id="wikiSyncBtn" class="primary-btn small" type="button">立即同步知识库</button>
+        </div>
+        <p id="wikiSyncStatus" class="hint">还没有同步过。</p>
+        <div id="wikiDocList" class="admin-table-head" style="margin-top:8px"></div>
+        <div id="wikiDocListBody"></div>
+      </section>
+
       <section id="sitesPanel" class="board admin-board admin-panel hidden" data-panel="sites">
         <div class="board-head">
           <div>
@@ -150,11 +197,11 @@
           </div>
           <div class="row-actions">
             <button id="addGroupBtn" class="plain-btn" type="button">新增分组</button>
-            <button id="saveBtn" class="primary-btn" type="button">保存配置</button>
+            <button id="saveBtn" class="plain-btn" type="button">立即保存</button>
           </div>
         </div>
         <div id="adminEditor" class="admin-editor"><div class="loading-card"><span class="state-icon" aria-hidden="true">◌</span><strong>正在加载站点配置</strong><small>正在读取工作台入口和分组。</small></div></div>
-        <p id="saveStatus" class="hint">数据源：MySQL</p>
+        <p id="saveStatus" class="hint">修改会自动保存到 MySQL，无需手动点保存。</p>
       </section>
 
       <section id="projectsPanel" class="board admin-board admin-panel hidden" data-panel="projects">
@@ -228,6 +275,19 @@
             <button id="projectSaveBtn" type="submit" class="primary-btn">保存</button>
           </div>
         </form>
+      </dialog>
+
+      <dialog id="siteScopeDialog" aria-labelledby="siteScopeDialogTitle">
+        <div class="settings-form" style="display:block">
+          <h2 id="siteScopeDialogTitle">可见范围</h2>
+          <p id="siteScopeDialogHint" class="hint">选择哪些角色/成员能在工作台里看到这个入口。</p>
+          <div id="siteScopeRoles" class="site-access-checks"></div>
+          <div id="siteScopeUsers" class="site-member-grid"></div>
+          <div class="row-actions" style="justify-content:flex-end;margin-top:16px">
+            <button id="siteScopeCancelBtn" type="button" class="plain-btn">取消</button>
+            <button id="siteScopeSaveBtn" type="button" class="primary-btn">确定</button>
+          </div>
+        </div>
       </dialog>
 
       <section id="rolesPanel" class="board admin-board admin-panel hidden" data-panel="roles">

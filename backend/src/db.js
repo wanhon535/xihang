@@ -34,7 +34,11 @@ const DEFAULT_SYSTEM_SETTINGS = {
   dingtalkNotifyAppSecret: '',
   dingtalkNotifyAgentId: '',
   dingtalkNotifyUserIds: '',
-  dingtalkNotifyDeptIds: ''
+  dingtalkNotifyDeptIds: '',
+  dingtalkRosterAppKey: '',
+  dingtalkRosterAppSecret: '',
+  dingtalkRosterCorpId: '',
+  dingtalkWikiOperatorId: ''
 };
 
 const SYSTEM_SETTING_LABELS = {
@@ -59,14 +63,18 @@ const SYSTEM_SETTING_LABELS = {
   dingtalkNotifyAppSecret: '监督agent钉钉应用 AppSecret',
   dingtalkNotifyAgentId: '监督agent钉钉 AgentId',
   dingtalkNotifyUserIds: '监督agent钉钉接收人 userid（逗号分隔）',
-  dingtalkNotifyDeptIds: '监督agent钉钉接收部门 deptid（逗号分隔）'
+  dingtalkNotifyDeptIds: '监督agent钉钉接收部门 deptid（逗号分隔）',
+  dingtalkRosterAppKey: '通讯录同步钉钉应用 AppKey',
+  dingtalkRosterAppSecret: '通讯录同步钉钉应用 AppSecret',
+  dingtalkRosterCorpId: '通讯录同步企业 CorpId',
+  dingtalkWikiOperatorId: '知识库同步操作人 unionId'
 };
 
 // Settings that hold real external credentials, not configuration text: encrypted
 // at rest with the same AES-256-GCM key the credential vault uses, never echoed
 // back to the browser (listSystemSettings masks them), and only decryptable via
 // getDecryptedSystemSetting() for server-side/script use.
-const SECRET_SETTING_KEYS = new Set(['smsAccessKeySecret', 'dingtalkNotifyAppSecret']);
+const SECRET_SETTING_KEYS = new Set(['smsAccessKeySecret', 'dingtalkNotifyAppSecret', 'dingtalkRosterAppSecret']);
 const SECRET_CONFIGURED_MARKER = '__configured__';
 
 const DEFAULT_WORKSPACE_THEME = {
@@ -287,6 +295,22 @@ export async function initDatabase() {
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (sid),
       KEY idx_app_sessions_expires (expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS dingtalk_docs (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      workspace_id VARCHAR(120) NOT NULL,
+      workspace_name VARCHAR(255) NOT NULL DEFAULT '',
+      node_id VARCHAR(120) NOT NULL,
+      name VARCHAR(500) NOT NULL DEFAULT '',
+      url VARCHAR(1000) NOT NULL DEFAULT '',
+      modified_time DATETIME NULL,
+      synced_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uk_dingtalk_docs_node (workspace_id, node_id),
+      KEY idx_dingtalk_docs_modified (modified_time)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
@@ -1130,6 +1154,81 @@ export async function findUserByDingTalkUserId(corpId, userId) {
     userId
   ]);
   return rows[0] || null;
+}
+
+// Roster sync (只读同步): pre-creates/refreshes an account for every active
+// DingTalk employee so an admin can assign role/site visibility before that
+// person's first login, without ever touching last_login_at or reactivating
+// an account an admin manually disabled. Unlike upsertDingTalkUser (the OAuth
+// login path), this never counts as a "login" and never overrides role.
+export async function upsertRosterUser({ dingtalkUserId, dingtalkCorpId, nick, unionid }) {
+  const username = createUsername({ unionid, userid: dingtalkUserId });
+  const password = createRandomPassword();
+  const passwordHash = await bcrypt.hash(password, 10);
+  const db = getPool();
+
+  await db.query(
+    `INSERT INTO users
+       (username, password_hash, nick, unionid, dingtalk_userid, dingtalk_corp_id, role, status, must_change_password)
+     VALUES (?, ?, ?, ?, ?, ?, 'member', 'active', 0)
+     ON DUPLICATE KEY UPDATE
+       nick = VALUES(nick),
+       unionid = COALESCE(VALUES(unionid), unionid),
+       status = IF(status = 'disabled', 'disabled', 'active')`,
+    [username, passwordHash, nick || username, unionid || null, dingtalkUserId, dingtalkCorpId]
+  );
+}
+
+// Read-only knowledge-base list (只读列表+跳转): replaces the cached doc list
+// with a fresh sync pull. We never store document content, only the pointers
+// needed to show a list and jump back to DingTalk to actually read it.
+export async function replaceDingTalkDocs(docs) {
+  const db = getPool();
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.query('DELETE FROM dingtalk_docs');
+    for (const doc of docs) {
+      await connection.query(
+        `INSERT INTO dingtalk_docs (workspace_id, workspace_name, node_id, name, url, modified_time)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [doc.workspaceId, doc.workspaceName || '', doc.nodeId, doc.name || '', doc.url || '', doc.modifiedTime || null]
+      );
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function listDingTalkDocs() {
+  const db = getPool();
+  const [rows] = await db.query(
+    `SELECT workspace_name AS workspaceName, node_id AS nodeId, name, url,
+       modified_time AS modifiedTime, synced_at AS syncedAt
+     FROM dingtalk_docs
+     ORDER BY modified_time DESC, name ASC`
+  );
+  return rows;
+}
+
+// Marks accounts as disabled once their DingTalk userid stops appearing in a
+// fresh roster pull (离职/移出通讯录) — only touches accounts this sync owns
+// (dingtalk_corp_id matches, dingtalk_userid set), never local/manual accounts.
+export async function disableStaleDingTalkUsers(corpId, activeUserIds) {
+  const db = getPool();
+  const ids = activeUserIds.filter(Boolean);
+  const placeholders = ids.length ? ids.map(() => '?').join(',') : "''";
+  const [result] = await db.query(
+    `UPDATE users SET status = 'disabled'
+     WHERE dingtalk_corp_id = ? AND dingtalk_userid IS NOT NULL AND status != 'disabled'
+       AND dingtalk_userid NOT IN (${placeholders})`,
+    [corpId, ...ids]
+  );
+  return result.affectedRows || 0;
 }
 
 async function seedFromJson() {
