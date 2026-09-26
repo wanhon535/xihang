@@ -27,3 +27,10 @@ ui-candidate/
 ui-fixed/
 .env.*
 !.env.example
+
+# 构建/部署快照与临时脚本（勿入库）
+dist.bak-*/
+dist.new/
+__pycache__/
+*.pyc
+*.bak-*
