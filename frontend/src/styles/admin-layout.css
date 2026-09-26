@@ -476,10 +476,15 @@ body.vben-shell.console-page {isolation:isolate}
 .app-toast[data-state='leaving'] {opacity:0;transform:translateY(-4px)}
 .app-toast.is-centered[data-state='visible'] {transform:translate(-50%,0)}
 @media(prefers-reduced-motion:reduce){.vben-shell.console-page #seasonalParticles {display:none!important}.app-toast {transition:none}.vben-shell.console-page .side-rail,.vben-shell.console-page .workspace-header,.vben-shell.console-page .workspace-tabs,.vben-shell.console-page .console-main {transition:none}}
-/* Only the home page duplicates this heading in its own hero banner; every
-   other console page (vault/ledger/screen/admin) relies on it to show its
-   title and description, so it must stay visible there. */
-.vben-shell.home-page .console-topbar.page-heading {display:none}
+/* The shared shell header (breadcrumb) and the tab strip already name the
+   current page, so a giant repeated h1 in the content area itself is a
+   third restatement of the same title — hidden on every console page, not
+   just home (which was the original, narrower scope here before this was
+   called out as still redundant on vault/ledger/admin/screen too). Nothing
+   else lives in .console-topbar once shell.js runs (it relocates the
+   per-page logout/user-name markup into the shared header), so this is
+   purely the title block — safe to hide everywhere. */
+.vben-shell.console-page .console-topbar.page-heading {display:none}
 
 /* Tighter type scale and spacing for 管理中枢 specifically: the shared
    console sizing (30px h1, 29px stat numbers, 20px card padding) reads as

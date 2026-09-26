@@ -57,10 +57,9 @@ test('workspace shell keeps the workspace navigation and hides repeated page hea
   assert.doesNotMatch(shell, /new MutationObserver/);
   assert.match(css, /\.vben-shell\.console-page \.workspace-tabs\s*\{/);
   assert.match(css, /\.vben-shell\.console-page \.console-main \{[^}]*padding:116px 24px 24px/);
-  // Only the home page duplicates this heading in its own hero banner; every other
-  // console page needs it visible to show its own title/description (regression:
-  // this used to be broadened to hide it on every console page, see admin-layout.css).
-  assert.match(css, /\.vben-shell\.home-page \.console-topbar\.page-heading\s*\{[^}]*display:none/);
+  // The shared shell header + tab strip already name the current page, so the
+  // per-page h1 in .console-topbar is hidden everywhere, not just on home.
+  assert.match(css, /\.vben-shell\.console-page \.console-topbar\.page-heading\s*\{[^}]*display:none/);
 });
 
 test('seasonal particles sit above backgrounds but below content and controls', () => {
