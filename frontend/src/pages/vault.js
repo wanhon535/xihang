@@ -1,6 +1,6 @@
 import { setWorkspaceUser } from '../shell.js';
 import { api, logout, redirectToLogin, requireUser } from '../api.js';
-import { showToast } from '../ui-feedback.js';
+import { showToast, closeDialogAnimated } from '../ui-feedback.js';
 
 const userName = document.querySelector('#userName');
 const logoutBtn = document.querySelector('#logoutBtn');
@@ -60,8 +60,8 @@ function openCredentialEditor() {
 }
 newCredentialBtn.addEventListener('click', () => { startCreate(); openCredentialEditor(); });
 function clearEditorSecret() { passwordInput.value = ''; passwordInput.type = 'password'; }
-document.querySelector('#closeCredentialBtn').addEventListener('click', () => { clearEditorSecret(); credentialDialog.close(); });
-credentialDialog.addEventListener('cancel', clearEditorSecret);
+document.querySelector('#closeCredentialBtn').addEventListener('click', () => { clearEditorSecret(); closeDialogAnimated(credentialDialog); });
+credentialDialog.addEventListener('cancel', (event) => { event.preventDefault(); clearEditorSecret(); closeDialogAnimated(credentialDialog); });
 credentialDialog.addEventListener('close', clearEditorSecret);
 clearFormBtn.addEventListener('click', startCreate);
 deleteCredentialBtn.addEventListener('click', deleteCurrentCredential);
@@ -397,6 +397,7 @@ async function saveCredential(event) {
     await loadCredentials();
     editCredential(editingId);
     formStatus.textContent = '已保存到你的星钥库。';
+    showToast('已保存', saveCredentialBtn);
   } catch (error) {
     formStatus.textContent = error.message;
   } finally {
@@ -417,6 +418,7 @@ async function deleteCurrentCredential() {
     await loadCredentials();
     startCreate();
     formStatus.textContent = '已删除这条记录。';
+    showToast('已删除', formStatus);
   } catch (error) {
     formStatus.textContent = error.message;
   } finally {

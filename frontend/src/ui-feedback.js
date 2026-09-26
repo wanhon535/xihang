@@ -1,3 +1,19 @@
+// Lets a <dialog>'s CSS close-transition actually play: dialog.close()
+// otherwise removes [open] synchronously, so the transition on dialog[open]
+// never gets a "before" frame to animate from. Pairs with the dialog[open] /
+// dialog.dialog-closing rules in admin-layout.css, which apply to every
+// console page, so this one helper covers admin/vault/ledger dialogs alike.
+export function closeDialogAnimated(dialog) {
+  if (!dialog || !dialog.open || dialog.classList.contains('dialog-closing')) {
+    return;
+  }
+  dialog.classList.add('dialog-closing');
+  window.setTimeout(() => {
+    dialog.classList.remove('dialog-closing');
+    dialog.close();
+  }, 160);
+}
+
 const TOAST_DURATION = 3500;
 const VIEWPORT_MARGIN = 16;
 let activeToast = null;

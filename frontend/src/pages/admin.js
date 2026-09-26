@@ -1,18 +1,6 @@
 import { setWorkspaceUser, syncActiveHeading, setNotifications } from '../shell.js';
 import { api, logout, redirectToLogin, requireUser } from '../api.js';
-import { showToast } from '../ui-feedback.js';
-
-// Lets a dialog's close-animation actually play: dialog.close() otherwise
-// removes [open] synchronously, so the CSS transition on dialog[open] never
-// gets a "before" frame to animate from.
-function closeDialogAnimated(dialog) {
-  if (!dialog.open || dialog.classList.contains('dialog-closing')) return;
-  dialog.classList.add('dialog-closing');
-  window.setTimeout(() => {
-    dialog.classList.remove('dialog-closing');
-    dialog.close();
-  }, 160);
-}
+import { showToast, closeDialogAnimated } from '../ui-feedback.js';
 
 const editor = document.querySelector('#adminEditor');
 const saveBtn = document.querySelector('#saveBtn');

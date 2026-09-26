@@ -2,6 +2,7 @@ import { setWorkspaceUser } from '../shell.js';
 import { api, logout, redirectToLogin, requireUser } from '../api.js';
 import { API_BASE_URL } from '../config.js';
 import { money, totalCents, filterEntries } from '../ledger-utils.js';
+import { showToast, closeDialogAnimated } from '../ui-feedback.js';
 
 const $ = id => document.getElementById(id);
 const form = $('entryForm');
@@ -32,7 +33,7 @@ function handleAuth(error) {
   entries = [];
   $('rows').replaceChildren();
   $('ledgerWorkspace').hidden = true;
-  if (dialog.open) dialog.close();
+  if (dialog.open) closeDialogAnimated(dialog);
   if (error.code === 'PASSWORD_CHANGE_REQUIRED') window.location.href = '/change-password.html';
   else if (error.status === 401) redirectToLogin('登录已失效，请重新登录。');
   else status('当前账号没有管理员台账权限。', true);
@@ -176,7 +177,10 @@ async function loadEntries() {
     $('summaryMonth').textContent = `${payload.month} · 元`;
     refreshOptions();
     render();
-    status('台账已更新 · 所有管理员共享记录');
+    // Cleared rather than restating "所有管理员共享记录" — that's already in
+    // the page's own subtitle right above; a status line only needs to speak
+    // up for loading/errors, not repeat what's already on screen.
+    status('');
     return true;
   } catch (error) {
     if (!handleAuth(error)) status(`加载失败：${error.message}。可点击刷新重试；现有数据可能已过期。`, true);
@@ -245,10 +249,11 @@ async function saveEntry(event) {
       method: editing ? 'PUT' : 'POST', body: JSON.stringify(payload)
     });
     saved = true;
-    dialog.close();
+    closeDialogAnimated(dialog);
     const refreshed = await loadEntries();
-    if (refreshed) status('保存成功，台账已更新。');
-    else if (user) status('保存已成功，但列表刷新失败。请刷新列表，勿重复新增。', true);
+    if (refreshed) {
+      showToast('已保存', $('saveBtn'));
+    } else if (user) status('保存已成功，但列表刷新失败。请刷新列表，勿重复新增。', true);
   } catch (error) {
     if (handleAuth(error)) return;
     if (error.status === 409) {
@@ -291,8 +296,12 @@ $('resetBtn').addEventListener('click', () => {
 });
 $('newBtn').addEventListener('click', () => openEditor());
 $('refreshBtn').addEventListener('click', loadEntries);
-$('cancelBtn').addEventListener('click', () => { if (!saving) dialog.close(); });
-dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+$('cancelBtn').addEventListener('click', () => { if (!saving) closeDialogAnimated(dialog); });
+dialog.addEventListener('cancel', event => {
+  if (saving) { event.preventDefault(); return; }
+  event.preventDefault();
+  closeDialogAnimated(dialog);
+});
 form.addEventListener('submit', saveEntry);
 $('logoutBtn').addEventListener('click', async () => {
   try { await logout(); } catch (error) { if (!handleAuth(error)) status(`退出失败：${error.message}`, true); }
