@@ -11,6 +11,14 @@ import express from 'express';
 import session from 'express-session';
 import helmet from 'helmet';
 import {
+  SmsError,
+  querySendDetail,
+  resolveSmsCredentials,
+  sendSms,
+  smsCredentialsStatus
+} from './sms-service.js';
+import { createSmsGatewayAuth, gatewayConfigured } from './sms-auth.js';
+import {
   changeOwnPassword,
   cleanExpiredSsoTickets,
   consumeSsoTicket,
@@ -111,7 +119,19 @@ app.use(
   })
 );
 app.use(cookieParser());
-app.use(express.json({ limit: '8mb' }));
+// 短信网关的签名基于「原始请求字节」，而 express.json() 会把 body 重建成对象，
+// 原始字节随之丢失。这里用 body-parser 官方的 verify 钩子在解析前拿到 raw buffer，
+// 不解流、不干扰后续解析，且对所有请求都只是多一次引用赋值（零拷贝）。
+app.use(
+  express.json({
+    limit: '8mb',
+    verify: (req, res, buf) => {
+      if (req.originalUrl && req.originalUrl.startsWith('/api/sms')) {
+        req.rawBody = buf.toString('utf8');
+      }
+    }
+  })
+);
 app.use(
   session({
     name: 'tidesail_sid',
@@ -700,6 +720,123 @@ app.put('/api/admin/settings', requireLogin, requireAdmin, async (req, res, next
     res.json({ ok: true, settings });
   } catch (error) {
     next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 汐构短信网关（xigou-sms-gateway）
+// 外部系统通过固定密钥（HMAC-SHA256）触发短信发送。
+// ---------------------------------------------------------------------------
+
+const smsGatewayAuth = createSmsGatewayAuth(process.env);
+
+/** 未鉴权的健康检查，便于调用方确认网关是否就绪（不泄露任何凭证） */
+app.get('/api/sms/health', async (req, res) => {
+  try {
+    const settings = await listSystemSettings();
+    const credentials = await resolveSmsCredentials({
+      settings,
+      getSecret: getDecryptedSystemSetting
+    });
+    res.json({
+      ok: true,
+      service: 'xigou-sms-gateway',
+      version: '1.0.0',
+      gatewayAuthConfigured: gatewayConfigured(process.env),
+      ...smsCredentialsStatus(credentials)
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+/** 发送短信 */
+app.post('/api/sms/send', smsGatewayAuth, async (req, res) => {
+  const started = Date.now();
+  try {
+    const body = req.body || {};
+
+    if (!body.phone) {
+      res.status(400).json({ ok: false, code: 'SMS_PHONE_EMPTY', message: '缺少必填字段 phone。' });
+      return;
+    }
+
+    const settings = await listSystemSettings();
+    const credentials = await resolveSmsCredentials({
+      settings,
+      getSecret: getDecryptedSystemSetting
+    });
+
+    const result = await sendSms({
+      phone: body.phone,
+      templateParam: body.templateParam || {},
+      templateCode: body.templateCode,
+      signName: body.signName,
+      outId: body.outId,
+      credentials
+    });
+
+    // 审计留痕（不落手机号明文，也不落 AccessKey）
+    await recordAuditLog({
+      actor: { id: null, username: `sms-gateway:${req.smsCaller?.keyId || 'unknown'}`, role: 'system' },
+      action: 'sms.send',
+      targetType: 'sms',
+      targetId: result.bizId || '-',
+      summary: `短信网关发送：${result.phone}，模板 ${body.templateCode || credentials.templateCode}，结果 ${result.code}`,
+      ip: req.ip,
+      userAgent: req.get('user-agent') || ''
+    }).catch(() => {});
+
+    console.log(`[sms-gateway] send ok caller=${req.smsCaller?.keyId} phone=${result.phone} bizId=${result.bizId} ${Date.now() - started}ms`);
+
+    res.json({
+      ok: true,
+      bizId: result.bizId,
+      phone: result.phone,
+      templateCode: body.templateCode || credentials.templateCode,
+      message: '网关已受理（不代表已送达，回执请调用 /api/sms/query）',
+      requestId: result.requestId
+    });
+  } catch (error) {
+    if (error instanceof SmsError) {
+      console.warn(`[sms-gateway] send failed caller=${req.smsCaller?.keyId} code=${error.code} msg=${error.message}`);
+      res.status(error.httpStatus || 400).json({
+        ok: false,
+        code: error.code,
+        message: error.message,
+        ...(error.detail ? { detail: error.detail } : {})
+      });
+      return;
+    }
+    console.error('[sms-gateway] unexpected error:', error);
+    res.status(500).json({ ok: false, code: 'SMS_INTERNAL_ERROR', message: error.message });
+  }
+});
+
+/** 查询发送回执 */
+app.post('/api/sms/query', smsGatewayAuth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const settings = await listSystemSettings();
+    const credentials = await resolveSmsCredentials({
+      settings,
+      getSecret: getDecryptedSystemSetting
+    });
+
+    const result = await querySendDetail({
+      phone: body.phone,
+      sendDate: body.sendDate,
+      bizId: body.bizId,
+      credentials
+    });
+
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    if (error instanceof SmsError) {
+      res.status(error.httpStatus || 400).json({ ok: false, code: error.code, message: error.message });
+      return;
+    }
+    res.status(500).json({ ok: false, code: 'SMS_INTERNAL_ERROR', message: error.message });
   }
 });
 
