@@ -71,8 +71,17 @@ export function smsCredentialsStatus({ accessKeyId, accessKeySecret, signName, t
 }
 
 // ---------------------------------------------------------------------------
-// 阿里云 RPC 签名（HMAC-SHA256 / V3 风格）
+// 阿里云 RPC 签名（HMAC-SHA1 + Signature 参数）
 // ---------------------------------------------------------------------------
+// ⚠️ dysmsapi 走的是**经典 RPC 风格**签名：需要把 Signature 作为 query 参数
+//    传出。它**不支持** `Authorization: aliyun_v3:` 的 ACS3 头（那是新版
+//    OpenAPI 用的），用了会返回 400 `MissingSignature`。
+//
+//    踩坑记录（2026-09-26）：原先用 ACS3 头签名，网关被配好后首次真机联调
+//    报 `SMS_UPSTREAM_MissingSignature` —— 因为 query 里带的是
+//    `SignatureMethod=HMAC-SHA256` 却没有 `Signature`，阿里云从
+//    SignatureMethod 判定应走经典签名，于是要求 Signature 参数。
+//    换成下面的 HMAC-SHA1 + Signature query 后立即 OK。
 
 function percentEncode(value) {
   return encodeURIComponent(String(value))
@@ -89,16 +98,31 @@ function hmac256(key, input, encoding) {
   return crypto.createHmac('sha256', key).update(input, 'utf8').digest(encoding);
 }
 
+function hmac1(key, input, encoding) {
+  return crypto.createHmac('sha1', key).update(input, 'utf8').digest(encoding);
+}
+
 /**
- * 生成阿里云 dysmsapi 请求的公共参数（含 Authorization 头）。
+ * 生成阿里云 dysmsapi 请求的公共参数与 URL（经典 RPC 签名）。
  *
- * 采用 RPC 风格 V3 签名：
- *   CanonicalRequest = METHOD \n CanonicalURI \n CanonicalQueryString \n
- *                      CanonicalHeaders \n SignedHeaders \n HashedPayload
- *   StringToSign     = Algorithm \n Timestamp \n Scope \n Hash(CanonicalRequest)
- *   Signature        = HMAC-SHA256(SigningKey, StringToSign)
+ *   StringToSign = METHOD \n percentEncode("/") \n percentEncode(sortedQuery)
+ *   Signature    = Base64(HMAC-SHA1(AccessKeySecret + "&", StringToSign))
+ *
+ * Signature 作为 query 参数随请求一起发送（不是 Authorization 头）。
+ *
+ * 注意：签名的 canonical query **不含** Signature 本身，但**包含**其它全部
+ * 公共参数与业务参数，且这些参数必须与真正发出去的 query 完全一致。
+ *
+ * ⚠️ 方法必须是 **GET**。dysmsapi 的经典 RPC 签名固定用 `GET&%2F&...`
+ *    作为 stringToSign 前缀；若按 POST 签，阿里云会返回
+ *    `SignatureDoesNotMatch`（即使请求本身用 POST 发出）。
+ *    实测验证：同一个签名用 GET 发 → 通过（报 SignatureNonceUsed 说明已验签
+ *    成功），用 POST 发 → SignatureDoesNotMatch。
+ *
+ *    请求本身用 POST 发没问题（参数都在 query 里），但**签名里的 method 必须
+ *    写 GET**，这是阿里云 RPC 签名的历史约定。
  */
-function buildSignedHeaders({ params, accessKeyId, accessKeySecret, body = '' }) {
+function buildSignedHeaders({ params, accessKeyId, accessKeySecret, method = 'GET' }) {
   const timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   const nonce = crypto.randomBytes(16).toString('hex');
 
@@ -107,7 +131,7 @@ function buildSignedHeaders({ params, accessKeyId, accessKeySecret, body = '' })
     Format: 'JSON',
     Version: DYSMS_API_VERSION,
     AccessKeyId: accessKeyId,
-    SignatureMethod: 'HMAC-SHA256',
+    SignatureMethod: 'HMAC-SHA1',
     SignatureVersion: '1.0',
     SignatureNonce: nonce,
     Timestamp: timestamp
@@ -118,28 +142,21 @@ function buildSignedHeaders({ params, accessKeyId, accessKeySecret, body = '' })
     .map((key) => `${percentEncode(key)}=${percentEncode(allParams[key])}`)
     .join('&');
 
-  const hashedPayload = sha256Hex(body);
-  const canonicalHeaders = `host:dysmsapi.aliyuncs.com\nx-acs-action:${params.Action}\nx-acs-version:${DYSMS_API_VERSION}\n`;
-  const signedHeaders = 'host;x-acs-action;x-acs-version';
-  const canonicalRequest = ['POST', '/', canonicalQuery, canonicalHeaders, signedHeaders, hashedPayload].join('\n');
-
-  const dateScope = timestamp.slice(0, 10); // yyyy-MM-dd
-  const signingKey = hmac256(accessKeySecret, `aliyun_v3:${accessKeyId}:${dateScope}`, 'buffer');
-  const signature = hmac256(signingKey, canonicalRequest, 'hex');
-
-  const authorization =
-    `aliyun_v3:HmacSHA256 Credential=${accessKeyId}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  // ⚠️ 关键：stringToSign 里的 canonicalQuery 要**再整体 percentEncode 一次**
+  //    （阿里云文档叫「编码后的规范化查询字符串」）。即 `=`→`%3D`、`&`→`%26`。
+  //    少了这一步会得到 SignatureDoesNotMatch。
+  //    阿里云报错里会回显它自己算的 server stringToSign，形如
+  //    `POST&%2F&AccessKeyId%3D...%26Action%3D...` —— 可直接对照排查。
+  // ⚠️ 三段之间用 '&' 连接，**不是** '\n'！
+  //    阿里云报错回显的 server stringToSign 形如
+  //    `GET&%2F&AccessKeyId%3D...%26Action%3D...` —— 开头就是 `GET&%2F&`。
+  //    用 '\n' 连接会得到 SignatureDoesNotMatch（内容一样，仅分隔符不同）。
+  const stringToSign = [method, percentEncode('/'), percentEncode(canonicalQuery)].join('&');
+  const signature = hmac1(`${accessKeySecret}&`, stringToSign, 'base64');
 
   return {
-    url: `${DYSMS_ENDPOINT}?${canonicalQuery}`,
-    headers: {
-      Authorization: authorization,
-      'x-acs-action': params.Action,
-      'x-acs-version': DYSMS_API_VERSION,
-      'x-acs-date': timestamp,
-      'x-acs-content-sha256': hashedPayload,
-      'content-type': 'application/x-www-form-urlencoded'
-    },
+    url: `${DYSMS_ENDPOINT}?Signature=${percentEncode(signature)}&${canonicalQuery}`,
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
     nonce
   };
 }
@@ -148,12 +165,12 @@ function buildSignedHeaders({ params, accessKeyId, accessKeySecret, body = '' })
  * 调用 dysmsapi（RPC 风格：参数全部放在 query string，POST 空 body）。
  */
 async function callDysmsApi({ params, accessKeyId, accessKeySecret, timeoutMs = 8000 }) {
-  const { url, headers } = buildSignedHeaders({ params, accessKeyId, accessKeySecret, body: '' });
+  const { url, headers } = buildSignedHeaders({ params, accessKeyId, accessKeySecret });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { method: 'POST', headers, signal: controller.signal });
+    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
     const text = await response.text();
     let payload = null;
     try {
@@ -208,6 +225,26 @@ export function maskPhone(phone) {
   return `${p.slice(0, 3)}****${p.slice(-4)}`;
 }
 
+/**
+ * 判断是否「阿里云认可的中国人名」。
+ *
+ * 背景：模板 SMS_512081074 的 ${name} 绑定了「个人姓名」变量类型，
+ * 阿里云在下发前会做值校验，只认中文人名。实测被拒的形态：
+ *   wanhong / zhangsan / Zhang San / Alice Wong / E1024
+ * 通过的形态：
+ *   陈鑫明 / 王五 / 欧阳娜娜（含少数民族·间隔号：阿依古丽·买买提）
+ *
+ * 规则：2-20 个字符，仅允许中文汉字 + 「·」（少数民族姓名间隔号）。
+ * 注意这是「能不能过阿里云校验」的近似判断，不是严格的姓名学判定 ——
+ * 判不准时宁可回退（发得出去）也不要硬闯（整条失败）。
+ */
+export function isChinesePersonName(value) {
+  const name = String(value || '').trim();
+  if (!name) return false;
+  if (name.length < 2 || name.length > 20) return false;
+  return /^[\u4e00-\u9fa5]+(?:·[\u4e00-\u9fa5]+)*$/.test(name);
+}
+
 // ---------------------------------------------------------------------------
 // 核心：发送短信
 // ---------------------------------------------------------------------------
@@ -256,6 +293,36 @@ export async function sendSms({ phone, templateParam = {}, templateCode, signNam
     safeParam[key] = String(value ?? '').slice(0, 200);
   }
 
+  // -----------------------------------------------------------------------
+  // 非中文姓名「智能回退」（仅对绑了「个人姓名」变量类型的模板生效）
+  // -----------------------------------------------------------------------
+  // 模板 SMS_512081074（欢迎新员工）的 ${name} 在阿里云侧绑定了「个人姓名」
+  // 变量类型，下发前会做值校验：只认中文人名（如「陈鑫明」）。
+  // 传英文名/拼音/工号（wanhong、Zhang San、E1024）一律被拒：
+  //   isv.TEMPLATE_PARAMS_ILLEGAL
+  //   模版中的变量name(wanhong)不符合[个人姓名]的变量规范!
+  //
+  // 这是阿里云在【下发前】的校验，网关只是转发方，代码层改不了规则。
+  // 但不能让整条短信失败 —— 通知发不出去比称呼不准更糟。
+  // 所以这里做降级：非中文人名 → 换成中性称呼「同事」，保证送达。
+  //
+  // ⚠️ 2026-09-26 更新：后来新建了「字符串版本」模板（SMS_512580314）等，
+  // 其 ${name} 是「字符串」类型，**英文名可以原样发**。
+  // 故用白名单 SMS_NAME_STRING_TEMPLATES 区分：命中的模板跳过降级。
+  // -----------------------------------------------------------------------
+  const NAME_FALLBACK = '同事';
+  const nameStringTemplates = String(process.env.SMS_NAME_STRING_TEMPLATES || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // 该模板的 ${name} 是「字符串」类型 → 英文名可原样发，不降级
+  const nameIsStringType = nameStringTemplates.includes(finalTemplateCode);
+  let nameFallback = null;
+  if (safeParam.name && !nameIsStringType && !isChinesePersonName(safeParam.name)) {
+    nameFallback = { from: safeParam.name, to: NAME_FALLBACK };
+    safeParam.name = NAME_FALLBACK;
+  }
+
   const params = {
     Action: DYSMS_ACTION_SEND,
     PhoneNumbers: to,
@@ -285,7 +352,9 @@ export async function sendSms({ phone, templateParam = {}, templateCode, signNam
     code,
     message: payload.Message || 'OK',
     requestId: payload.RequestId || '',
-    phone: maskPhone(to)
+    phone: maskPhone(to),
+    // 非中文人名降级留痕：原始值 + 实际发出去的值，便于追溯与告警
+    nameFallback
   };
 }
 

@@ -126,7 +126,7 @@ function renderSites(sites) {
   return sites
     .map(
       (site) => `<a class="system-card" href="${escapeHtml(createSsoUrl(site))}" target="_blank" rel="noreferrer">
-  <span class="system-icon" style="background: ${getSiteGradient(site.name)};">${getSiteIcon(site.name)}</span>
+  <span class="system-icon" style="background: ${getSiteGradient(site.name)};">${getSiteIcon(site)}</span>
   <div class="system-card-body">
     <strong>${escapeHtml(site.name)}</strong>
     <p>${escapeHtml(site.description || '安全打开这个内部系统')}</p>
@@ -168,7 +168,13 @@ function countSites(groups) {
   return groups.reduce((total, group) => total + (group.sites || []).length, 0);
 }
 
-function getSiteIcon() {
+// 站点图标：管理员填了 iconUrl 就用远程图标；没填则回退到默认的内联 SVG，
+// 保证卡片在图标加载失败或未配置时也有稳定的视觉占位。
+function getSiteIcon(site) {
+  const url = String((site && site.iconUrl) || '').trim();
+  if (url) {
+    return `<img src="${escapeHtml(url)}" alt="" loading="lazy" onerror="this.remove()">`;
+  }
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 16 16 8M9 8h7v7"/></svg>';
 }
 

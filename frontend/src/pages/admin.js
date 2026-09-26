@@ -549,6 +549,14 @@ function renderGroups() {
       }
       siteCard.appendChild(field('入口名称', input(site.name, '例如：运营后台', (value) => (site.name = value))));
       siteCard.appendChild(field('访问地址', input(site.url, 'https://...', (value) => (site.url = value))));
+      siteCard.appendChild(
+        field(
+          '图标地址（可选）',
+          input(site.iconUrl || '', 'https://.../favicon.png', (value) => {
+            site.iconUrl = value.trim();
+          })
+        )
+      );
       siteCard.appendChild(field('入口说明', textarea(site.description, '一句话说明用途', (value) => (site.description = value))));
       siteCard.appendChild(
         field(

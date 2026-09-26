@@ -91,6 +91,15 @@ const rootDir = path.join(__dirname, '..', '..');
 const workspaceBackgroundRoot = path.join(rootDir, 'data', 'uploads', 'backgrounds');
 const dingTalkEventLogPath = path.join(rootDir, 'data', 'dingtalk-events.ndjson');
 const app = express();
+
+// ---------------------------------------------------------------------------
+// 短信发送幂等缓存（内存态）
+//   钉钉事件回调是「至少一次」投递，同一事件可能重复推送。
+//   同一 requestId 在 TTL 内只真正发送一次，避免重复短信 + 重复计费。
+// ---------------------------------------------------------------------------
+const SMS_IDEMPOTENCY_TTL_MS = Number(process.env.SMS_IDEMPOTENCY_TTL_MS || 24 * 60 * 60 * 1000);
+const SMS_IDEMPOTENCY_MAX = Number(process.env.SMS_IDEMPOTENCY_MAX || 5000);
+const smsIdempotency = new Map();
 const port = Number(process.env.PORT || 2222);
 const frontendOrigins = parseList(process.env.FRONTEND_ORIGIN || 'http://127.0.0.1:2223,http://localhost:2223');
 const frontendOrigin = frontendOrigins[0];
@@ -756,9 +765,47 @@ app.post('/api/sms/send', smsGatewayAuth, async (req, res) => {
   try {
     const body = req.body || {};
 
+    // ---------------------------------------------------------------------
+    // 入参留痕（脱敏）：排障用。
+    // 只记「传了哪些 key、关键值是什么（手机号打码）」，不记整个 body，
+    // 避免日志堆积敏感信息。钉钉侧字段拼错时，靠这行就能定位。
+    // ---------------------------------------------------------------------
+    console.log(
+      '[sms-gateway] recv caller=%s ip=%s keys=%s requestId=%j templateCode=%j phone=%j templateParam=%j',
+      req.smsCaller?.keyId || '-',
+      req.ip,
+      Object.keys(body).join(','),
+      body.requestId === undefined ? '(未传)' : String(body.requestId),
+      body.templateCode === undefined ? '(未传)' : String(body.templateCode),
+      body.phone === undefined
+        ? '(未传)'
+        : String(Array.isArray(body.phone) ? body.phone.join('|') : body.phone).replace(/^(\d{3})\d{4}(\d{0,4})$/, '$1****$2'),
+      body.templateParam === undefined ? '(未传)' : JSON.stringify(body.templateParam)
+    );
+
     if (!body.phone) {
       res.status(400).json({ ok: false, code: 'SMS_PHONE_EMPTY', message: '缺少必填字段 phone。' });
       return;
+    }
+
+    // ---------------------------------------------------------------------
+    // 幂等：同一 requestId 在 TTL 内只真正发送一次。
+    // 钉钉事件回调会重试（至少一次投递），没有这层就会重复发短信 + 重复计费。
+    // 命中缓存直接返回首次结果，且不消耗上游额度。
+    // ---------------------------------------------------------------------
+    const idemKey = String(body.requestId || '').trim();
+    // ⚠️ 幂等键必须包含手机号。
+    // 血泪教训：钉钉侧若把 requestId 拼成 "join-"（userid 取空），
+    // 所有员工会共用同一个键 → 张三发了，李四直接命中张三缓存、永远收不到。
+    // 加上 phone 后，即使 requestId 撞了，不同号码也不会互相顶掉。
+    const idemScope = idemKey ? `${idemKey}::${String(body.phone || '')}` : '';
+    if (idemKey) {
+      const cached = smsIdempotency.get(idemScope);
+      if (cached && cached.expiresAt > Date.now()) {
+        console.log(`[sms-gateway] idempotent hit requestId=${idemKey} caller=${req.smsCaller?.keyId}`);
+        res.json({ ...cached.result, idempotent: true });
+        return;
+      }
     }
 
     const settings = await listSystemSettings();
@@ -787,6 +834,13 @@ app.post('/api/sms/send', smsGatewayAuth, async (req, res) => {
       userAgent: req.get('user-agent') || ''
     }).catch(() => {});
 
+    if (result.nameFallback) {
+      // 非中文人名被降级成中性称呼，这里必须显式告警：
+      // 否则「员工收不到自己名字」会变成没人知道的黑盒。
+      console.warn(
+        `[sms-gateway] name fallback applied: "${result.nameFallback.from}" -> "${result.nameFallback.to}" (非中文人名，阿里云「个人姓名」变量类型不收)`
+      );
+    }
     console.log(`[sms-gateway] send ok caller=${req.smsCaller?.keyId} phone=${result.phone} bizId=${result.bizId} ${Date.now() - started}ms`);
 
     res.json({
@@ -795,8 +849,50 @@ app.post('/api/sms/send', smsGatewayAuth, async (req, res) => {
       phone: result.phone,
       templateCode: body.templateCode || credentials.templateCode,
       message: '网关已受理（不代表已送达，回执请调用 /api/sms/query）',
-      requestId: result.requestId
+      requestId: result.requestId,
+      // 非中文人名时告知调用方：姓名被降级了，短信仍已发出
+      ...(result.nameFallback
+        ? {
+            nameFallback: true,
+            nameFallbackFrom: result.nameFallback.from,
+            nameFallbackTo: result.nameFallback.to,
+            nameFallbackNote: '原姓名不符合阿里云「个人姓名」变量规范（仅收中文人名），已降级为中性称呼以保证送达。'
+          }
+        : {})
     });
+
+    // 写入幂等缓存（在响应之后，避免拖慢调用方）
+    // ⚠️ 这里必须整段 try 包裹：响应已经发出，任何异常都会冒到全局错误处理，
+    // 触发 ERR_HTTP_HEADERS_SENT 噪音日志，并让调用方看到一个假的 500。
+    try {
+      if (idemKey) {
+        const payload = {
+          ok: true,
+          bizId: result.bizId,
+          phone: result.phone,
+          templateCode: body.templateCode || credentials.templateCode,
+          message: '网关已受理（不代表已送达，回执请调用 /api/sms/query）',
+          requestId: result.requestId,
+          ...(result.nameFallback
+            ? {
+                nameFallback: true,
+                nameFallbackFrom: result.nameFallback.from,
+                nameFallbackTo: result.nameFallback.to,
+                nameFallbackNote: '原姓名不符合阿里云「个人姓名」变量规范（仅收中文人名），已降级为中性称呼以保证送达。'
+              }
+            : {})
+        };
+        smsIdempotency.set(idemScope, { result: payload, expiresAt: Date.now() + SMS_IDEMPOTENCY_TTL_MS });
+        if (smsIdempotency.size > SMS_IDEMPOTENCY_MAX) {
+          const now = Date.now();
+          for (const [k, v] of smsIdempotency) {
+            if (v.expiresAt <= now) smsIdempotency.delete(k);
+          }
+        }
+      }
+    } catch (idemError) {
+      console.warn('[sms-gateway] idempotency cache write failed:', idemError.message);
+    }
   } catch (error) {
     if (error instanceof SmsError) {
       console.warn(`[sms-gateway] send failed caller=${req.smsCaller?.keyId} code=${error.code} msg=${error.message}`);
@@ -809,7 +905,9 @@ app.post('/api/sms/send', smsGatewayAuth, async (req, res) => {
       return;
     }
     console.error('[sms-gateway] unexpected error:', error);
-    res.status(500).json({ ok: false, code: 'SMS_INTERNAL_ERROR', message: error.message });
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, code: 'SMS_INTERNAL_ERROR', message: error.message });
+    }
   }
 });
 

@@ -566,10 +566,15 @@ function clientLog(event, detail = '', meta = {}) {
     }
   });
 
+  // sendBeacon 在部分浏览器/CSP 下会静默失败（返回 false 或抛错），
+  // 且失败时不会有任何可见信号。这里检查返回值，失败则降级到 fetch，
+  // 否则像 handoff.posting / handoff.failed 这类关键事件会整条丢失。
   try {
     if (navigator.sendBeacon) {
-      navigator.sendBeacon(`${API_BASE_URL}/api/auth/dingtalk/client-log`, new Blob([payload], { type: 'application/json' }));
-      return;
+      const blob = new Blob([payload], { type: 'application/json' });
+      if (navigator.sendBeacon(`${API_BASE_URL}/api/auth/dingtalk/client-log`, blob)) {
+        return;
+      }
     }
   } catch {}
 

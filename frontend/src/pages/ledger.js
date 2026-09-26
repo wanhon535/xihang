@@ -10,6 +10,8 @@ const dialog = $('editDialog');
 const endpoint = '/api/admin/costs';
 const filterKeys = ['search', 'month', 'project', 'category', 'paymentStatus'];
 const fields = ['date', 'project', 'category', 'amount', 'paymentStatus', 'handler', 'description', 'notes'];
+// 项目管理里登记的项目（来源 /api/admin/projects），用于新增成本弹窗的下拉。
+let projectRegistry = [];
 let entries = [];
 let user = null;
 let editing = null;
@@ -74,7 +76,10 @@ function entryRow(entry) {
   const button = node('button', '编辑');
   button.type = 'button';
   button.setAttribute('aria-label', `编辑 ${entry.date} ${entry.project}`);
-  button.addEventListener('click', () => openEditor(entry));
+  button.addEventListener('click', async () => {
+    await loadProjectSuggestions();
+    openEditor(entry);
+  });
   action.append(button);
   row.append(action);
   return row;
@@ -194,12 +199,57 @@ function localDate() {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
+// 项目字段是三段式：下拉（已登记项目）+「其他（手填）」+ 手填输入框。
+// 台账里可能存在没在项目管理里登记过的历史项目名，所以不能强制只能从下拉选。
+const CUSTOM_PROJECT = '__custom__';
+function currentProjectValue() {
+  const select = $('entryProjectSelect');
+  if (select.value === CUSTOM_PROJECT) return $('entryProjectCustom').value;
+  return select.value;
+}
+function syncCustomProjectVisibility() {
+  const custom = $('entryProjectSelect').value === CUSTOM_PROJECT;
+  const input = $('entryProjectCustom');
+  input.hidden = !custom;
+  input.required = custom;
+  if (!custom) input.value = '';
+}
+// 把管理中枢「项目管理」登记的项目名填进新增/编辑弹窗的下拉。
+// 同时合并台账里已有的项目名，避免历史未登记项目在编辑时丢失。
+function fillEntryProjectOptions(projects, selected = '') {
+  const select = $('entryProjectSelect');
+  const names = projects.map(project => project.name);
+  if (selected && !names.includes(selected)) names.push(selected);
+  const placeholder = node('option', names.length ? '请选择项目' : '暂无已登记项目，请选「其他」手填');
+  placeholder.value = '';
+  placeholder.disabled = true;
+  select.replaceChildren(placeholder);
+  for (const name of names) {
+    const option = node('option', name);
+    option.value = name;
+    select.append(option);
+  }
+  const custom = node('option', '其他（手填项目名）');
+  custom.value = CUSTOM_PROJECT;
+  select.append(custom);
+  if (selected && names.includes(selected)) {
+    select.value = selected;
+  } else {
+    select.value = selected ? CUSTOM_PROJECT : '';
+    if (selected) $('entryProjectCustom').value = selected;
+  }
+  syncCustomProjectVisibility();
+}
 function openEditor(entry = null) {
   if (!user || saving) return;
   editing = entry;
   conflicted = false;
   form.reset();
-  for (const field of fields) form.elements.namedItem(field).value = entry ? (field === 'amount' ? money(entry.amountCents) : entry[field] || '') : '';
+  for (const field of fields) {
+    if (field === 'project') continue; // 项目字段走下拉 + 手填，单独处理
+    form.elements.namedItem(field).value = entry ? (field === 'amount' ? money(entry.amountCents) : entry[field] || '') : '';
+  }
+  fillEntryProjectOptions(projectRegistry, entry ? entry.project || '' : '');
   if (!entry) {
     form.elements.namedItem('date').value = localDate();
     form.elements.namedItem('paymentStatus').value = 'unpaid';
@@ -228,6 +278,7 @@ async function saveEntry(event) {
   event.preventDefault();
   if (!user || saving || conflicted || !form.reportValidity()) return;
   const payload = Object.fromEntries(fields.map(field => [field, form.elements.namedItem(field).value]));
+  payload.project = currentProjectValue().trim();
   if (!/^(0|[1-9]\d{0,8})(\.\d{1,2})?$/.test(payload.amount) || /^0(?:\.0{1,2})?$/.test(payload.amount)) {
     $('formStatus').textContent = '金额须大于零、最多两位小数，且不超过 999999999.99。';
     return;
@@ -294,7 +345,13 @@ $('resetBtn').addEventListener('click', () => {
   $('sort').value = 'date-desc';
   render();
 });
-$('newBtn').addEventListener('click', () => openEditor());
+$('newBtn').addEventListener('click', async () => {
+  // 打开前刷新一次项目列表：管理员刚在管理中枢登记的新项目能立刻带出。
+  await loadProjectSuggestions();
+  fillEntryProjectOptions(projectRegistry);
+  openEditor();
+});
+$('entryProjectSelect').addEventListener('change', syncCustomProjectVisibility);
 $('refreshBtn').addEventListener('click', loadEntries);
 $('cancelBtn').addEventListener('click', () => { if (!saving) closeDialogAnimated(dialog); });
 dialog.addEventListener('cancel', event => {
@@ -306,19 +363,26 @@ form.addEventListener('submit', saveEntry);
 $('logoutBtn').addEventListener('click', async () => {
   try { await logout(); } catch (error) { if (!handleAuth(error)) status(`退出失败：${error.message}`, true); }
 });
-// "项目"栏位仍是自由文本（历史记录里可能有没在项目管理里登记过的名字），这里只是
-// 把管理中枢"项目管理"里维护的项目名喂给输入框的自动完成，不强制必须从列表选。
+// "项目"栏位使用下拉选择（管理中枢"项目管理"里维护的项目名），并保留"其他（手填）"
+// 以便录入历史遗留的、尚未登记的项目名。这里同时刷新弹窗下拉和列表筛选下拉。
 async function loadProjectSuggestions() {
   try {
     const payload = await api('/api/admin/projects');
+    projectRegistry = payload.projects || [];
     const datalist = $('projectSuggestions');
-    datalist.replaceChildren(...(payload.projects || []).map((project) => {
+    datalist.replaceChildren(...projectRegistry.map((project) => {
       const option = document.createElement('option');
       option.value = project.name;
       return option;
     }));
+    $('projectFieldHint').textContent = projectRegistry.length
+      ? `已从项目管理带出 ${projectRegistry.length} 个项目；新增项目后重新打开本窗口即可看到。`
+      : '项目管理里还没有登记项目，可先选「其他（手填项目名）」，或去管理中枢 → 项目管理登记。';
+    return true;
   } catch {
-    // 拉取失败不影响录入成本，用户仍可以手打项目名。
+    $('projectFieldHint').textContent = '项目列表加载失败，可选「其他（手填项目名）」继续录入。';
+    // 拉取失败不影响录入成本，用户仍可以手填项目名。
+    return false;
   }
 }
 
@@ -334,7 +398,8 @@ async function init() {
     setWorkspaceUser(user);
     $('userName').textContent = user.nick || user.username || '管理员';
     $('ledgerWorkspace').hidden = false;
-    void loadProjectSuggestions();
+    await loadProjectSuggestions();
+    fillEntryProjectOptions(projectRegistry);
     await loadEntries();
   } catch (error) {
     if (!handleAuth(error)) status(`身份验证失败：${error.message}。请重新加载页面。`, true);

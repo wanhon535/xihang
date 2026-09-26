@@ -41,6 +41,11 @@
 .ledger-page dialog form>p{color:#65768b;font-size:13px}
 .ledger-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:22px}
 .ledger-wide{grid-column:1/-1}
+/* 项目字段：下拉选已登记项目，选「其他」后露出下方手填输入框。 */
+.ledger-select-wrap{display:block}
+.ledger-page #entryProjectCustom{margin-top:8px}
+.ledger-page #entryProjectCustom[hidden]{display:none}
+.ledger-page #projectFieldHint{margin-top:6px;font-weight:400;color:#8ba7bf;overflow-wrap:anywhere}
 .ledger-page #attachmentHint{font-weight:400;color:#65768b;overflow-wrap:anywhere}
 .ledger-dialog-actions{display:flex;justify-content:flex-end;gap:10px;padding-top:16px;border-top:1px solid #e3e9f0}
 .ledger-page #formStatus{min-height:22px;overflow-wrap:anywhere}

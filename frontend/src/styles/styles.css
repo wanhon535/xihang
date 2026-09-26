@@ -1189,6 +1189,16 @@ textarea.field-input {
   box-shadow: 0 6px 20px rgba(0,0,0,0.2);
 }
 
+/* 管理员配置的远程图标：撑满 48x48 的图标框并保持比例，
+   避免长宽比不同的 favicon 把卡片撑变形。 */
+.system-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+  display: block;
+}
+
 .system-card-body {
   min-width: 0;
   align-self: center;

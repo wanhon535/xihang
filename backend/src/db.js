@@ -335,7 +335,7 @@ export async function getSiteGroups(options = {}) {
   const db = getPool();
   const [groups] = await db.query('SELECT id, name, description FROM nav_groups ORDER BY sort_order ASC, id ASC');
   const [sites] = await db.query(
-    `SELECT id, group_id AS groupId, name, url, description, tags, visibility,
+    `SELECT id, group_id AS groupId, name, url, icon_url AS iconUrl, description, tags, visibility,
        allowed_roles AS allowedRoles, allowed_user_ids AS allowedUserIds
      FROM nav_sites
      ORDER BY sort_order ASC, id ASC`
@@ -383,12 +383,13 @@ export async function replaceSiteGroups(value) {
       for (const [siteIndex, site] of group.sites.entries()) {
         await connection.query(
           `INSERT INTO nav_sites
-             (group_id, name, url, description, tags, visibility, allowed_roles, allowed_user_ids, sort_order)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (group_id, name, url, icon_url, description, tags, visibility, allowed_roles, allowed_user_ids, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             result.insertId,
             site.name,
             site.url,
+            site.iconUrl,
             site.description,
             JSON.stringify(site.tags),
             site.visibility,
@@ -1558,6 +1559,7 @@ function normalizeSiteGroups(value) {
             .map((site) => ({
               name: String(site.name || '').trim(),
               url: String(site.url || '').trim(),
+              iconUrl: String(site.iconUrl ?? site.icon_url ?? '').trim(),
               description: String(site.description || '').trim(),
               tags: Array.isArray(site.tags)
                 ? site.tags.map((tag) => String(tag).trim()).filter(Boolean)
@@ -1580,6 +1582,7 @@ function mapSite(site, includePermissions = false) {
     id: site.id,
     name: site.name,
     url: site.url,
+    iconUrl: site.iconUrl || site.icon_url || '',
     description: site.description,
     tags: parseTags(site.tags)
   };

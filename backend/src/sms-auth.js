@@ -18,6 +18,36 @@
 // 兼容性：若调用方确实只想用一个固定字符串（最简单场景），也支持
 //   header: X-SMS-Token: <SMS_GATEWAY_TOKEN>
 // 这条路径默认关闭，需显式设置 SMS_GATEWAY_ALLOW_SIMPLE_TOKEN=1 才启用。
+//
+// ===========================================================================
+// 固定参数模式（钉钉侧专用）—— 2026-09-26 新增
+// ---------------------------------------------------------------------------
+// 场景：钉钉自定义机器人 / 宜搭连接器**算不了 HMAC 签名**，只能发固定请求。
+//       但裸 token 一旦泄露就能无限群发短信（烧钱）。所以这里在「固定请求」
+//       的基础上叠三道锁：
+//
+//   1. 固定 token      X-SMS-Token: <SMS_GATEWAY_FIXED_TOKEN>
+//   2. 固定模板        只允许 SMS_GATEWAY_FIXED_TEMPLATE_CODES 里列的模板
+//                      （默认只给欢迎新人 SMS_512081074），不许任意内容
+//   3. 限流            按调用方分桶：每分钟 + 每天 双上限
+//                      （令牌桶 + 日计数器，内存态）
+//
+//   配置（.env）：
+//     SMS_GATEWAY_ALLOW_SIMPLE_TOKEN=1
+//     SMS_GATEWAY_FIXED_TOKEN=<随机串>
+//     SMS_GATEWAY_FIXED_TEMPLATE_CODES=SMS_512081074
+//     SMS_GATEWAY_RATE_PER_MIN=10
+//     SMS_GATEWAY_RATE_PER_DAY=200
+//
+//   调用方（钉钉侧）只需一个固定的请求：
+//     POST /api/sms/send
+//     X-SMS-Token: <固定串>
+//     {"phone":"138...","templateParam":{"name":"张三"},
+//      "requestId":"join-{钉钉userid}"}
+//
+//   注意：固定参数模式下 `templateCode` 若由请求传入，必须在白名单内；
+//         白名单外的模板一律 403 拒绝。
+// ===========================================================================
 
 import crypto from 'node:crypto';
 
@@ -26,6 +56,86 @@ const NONCE_TTL_MS = MAX_SKEW_SECONDS * 1000;
 
 // 已消费的 nonce（内存态，防时间窗内重放）。窗口短且无需跨重启存活。
 const consumedNonces = new Map();
+
+// ---------------------------------------------------------------------------
+// 固定参数模式的限流桶（内存态，按 token 分桶）
+//   perMin: Map<key, {windowStart, count}>
+//   perDay: Map<key, {dayKey, count}>
+// ---------------------------------------------------------------------------
+const ratePerMin = new Map();
+const ratePerDay = new Map();
+
+function rateCheck(key, { perMin, perDay }) {
+  const now = Date.now();
+  const dayKey = new Date(now).toISOString().slice(0, 10);
+
+  // 每分钟桶（固定窗口）
+  const minuteWindow = Math.floor(now / 60000);
+  const m = ratePerMin.get(key);
+  if (!m || m.window !== minuteWindow) {
+    ratePerMin.set(key, { window: minuteWindow, count: 1 });
+  } else {
+    if (perMin > 0 && m.count >= perMin) {
+      return { ok: false, reason: 'minute', limit: perMin };
+    }
+    m.count += 1;
+  }
+
+  // 每天桶
+  const d = ratePerDay.get(key);
+  if (!d || d.dayKey !== dayKey) {
+    ratePerDay.set(key, { dayKey, count: 1 });
+  } else {
+    if (perDay > 0 && d.count >= perDay) {
+      return { ok: false, reason: 'day', limit: perDay };
+    }
+    d.count += 1;
+  }
+
+  return { ok: true };
+}
+
+/**
+ * 固定参数模式的配置解析。返回 null 表示未启用。
+ */
+export function fixedTokenConfig(env = process.env) {
+  const enabled = String(env.SMS_GATEWAY_ALLOW_SIMPLE_TOKEN || '') === '1';
+  const token = (env.SMS_GATEWAY_FIXED_TOKEN || env.SMS_GATEWAY_TOKEN || '').trim();
+  if (!enabled || !token) return null;
+
+  const codes = (env.SMS_GATEWAY_FIXED_TEMPLATE_CODES || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return {
+    token,
+    // 白名单为空 → 回落到「只允许服务端默认模板」，绝不放行任意模板
+    templateCodes: codes,
+    perMin: Number(env.SMS_GATEWAY_RATE_PER_MIN || 10) || 0,
+    perDay: Number(env.SMS_GATEWAY_RATE_PER_DAY || 200) || 0
+  };
+}
+
+/**
+ * 校验固定参数模式下的模板白名单。
+ * 白名单为空时只允许「不传 templateCode」（即走服务端默认模板）。
+ */
+export function checkTemplateAllowed(requestedCode, cfg, defaultCode = '') {
+  const want = String(requestedCode || '').trim() || String(defaultCode || '').trim();
+
+  if (cfg.templateCodes.length === 0) {
+    // 没配白名单：只允许默认模板，且调用方不得自行指定
+    if (String(requestedCode || '').trim()) {
+      return { ok: false, allowed: [] };
+    }
+    return { ok: true, code: want };
+  }
+  if (!want || !cfg.templateCodes.includes(want)) {
+    return { ok: false, allowed: cfg.templateCodes };
+  }
+  return { ok: true, code: want };
+}
 
 function sha256Hex(input) {
   return crypto.createHash('sha256').update(input, 'utf8').digest('hex');
@@ -116,10 +226,59 @@ export function createSmsGatewayAuth(env = process.env) {
     }
 
     // 简易固定 token 模式（默认关闭）
+    // 钉钉侧走这条路：固定 token + 模板白名单 + 限流
     if (String(env.SMS_GATEWAY_ALLOW_SIMPLE_TOKEN || '') === '1' && env.SMS_GATEWAY_TOKEN) {
       const provided = req.get('X-SMS-Token') || '';
       if (safeEqual(provided, env.SMS_GATEWAY_TOKEN)) {
         next();
+        return;
+      }
+    }
+
+    // 固定参数模式（钉钉侧专用）：固定 token + 模板白名单 + 限流
+    const fixedCfg = fixedTokenConfig(env);
+    if (fixedCfg) {
+      const provided = req.get('X-SMS-Token') || '';
+      if (provided && safeEqual(provided, fixedCfg.token)) {
+        // 限流：先按 token 分桶检查
+        const bucket = `fixed:${crypto.createHash('sha256').update(provided).digest('hex').slice(0, 12)}`;
+        const rate = rateCheck(bucket, fixedCfg);
+        if (!rate.ok) {
+          res.status(429).json({
+            ok: false,
+            code: rate.reason === 'minute' ? 'SMS_RATE_LIMIT_MINUTE' : 'SMS_RATE_LIMIT_DAY',
+            message:
+              rate.reason === 'minute'
+                ? `触发限流：每分钟最多 ${rate.limit} 条，请稍后重试。`
+                : `触发限流：每天最多 ${rate.limit} 条，请明日再试。`
+          });
+          return;
+        }
+
+        // 模板白名单：在此拦掉，避免有人拿固定 token 发任意内容
+        const allowed = checkTemplateAllowed(req.body?.templateCode, fixedCfg, env.ALIYUN_SMS_TEMPLATE_CODE || '');
+        if (!allowed.ok) {
+          res.status(403).json({
+            ok: false,
+            code: 'SMS_TEMPLATE_NOT_ALLOWED',
+            message: `固定参数模式不允许该短信模板。允许的模板：${allowed.allowed.join(', ') || '（仅服务端默认模板）'}`
+          });
+          return;
+        }
+
+        // 固定模式下强制使用白名单解析出的模板，覆盖请求里的值
+        req.body = { ...(req.body || {}), templateCode: allowed.code };
+        req.smsCaller = { keyId: 'fixed-token', mode: 'fixed' };
+        next();
+        return;
+      }
+      // 带了 token 但不对 → 直接拒绝，不再往下走 HMAC（避免探测）
+      if (provided) {
+        res.status(401).json({
+          ok: false,
+          code: 'SMS_AUTH_BAD_TOKEN',
+          message: '固定 token 不正确。'
+        });
         return;
       }
     }
