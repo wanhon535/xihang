@@ -73,11 +73,12 @@ const selectEntries = `SELECT CAST(e.id AS CHAR) AS id, DATE_FORMAT(e.cost_date,
   CAST(a.id AS CHAR) AS attachmentId, a.filename AS attachmentName
   FROM cost_entries e LEFT JOIN cost_attachments a ON a.entry_id=e.id`;
 const validId = (id) => typeof id === 'string' && /^[1-9]\d{0,19}$/.test(id);
-export function createCostRouter({ db, requireLogin, requireAdmin, writeAudit = async () => {} }) {
+export function createCostRouter({ db, requireLogin, writeAudit = async () => {} }) {
   const router = express.Router();
-  router.use(requireLogin, requireAdmin);
-  // Existing admin middleware has legacy nickname allowlists. Ledger requires persisted admin role.
-  router.use((req, res, next) => req.session.user.role === 'admin' ? next() : res.status(403).json({ok:false,message:'仅管理员可访问成本台账。'}));
+  // Ledger is a shared, company-wide log: every logged-in account can read it
+  // and record entries. Editing is restricted to the entry's own creator (or
+  // an admin) in save() below, so no blanket requireAdmin gate here.
+  router.use(requireLogin);
   router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   const route = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
   router.get('/', route(async (req, res) => {
@@ -99,10 +100,15 @@ export function createCostRouter({ db, requireLogin, requireAdmin, writeAudit = 
       await connection.beginTransaction();
       const values = [entry.date,entry.project,entry.category,entry.description,entry.amountCents,entry.paymentStatus,entry.handler,entry.notes];
       if (updating) {
+        if (actor.role !== 'admin') {
+          const [owner] = await connection.query('SELECT created_by FROM cost_entries WHERE id=?',[id]);
+          if (!owner.length) throw fail('记录不存在。', 404);
+          if (String(owner[0].created_by) !== String(actor.id)) throw fail('只能修改自己创建的记录。', 403);
+        }
         const [result] = await connection.query(`UPDATE cost_entries SET cost_date=?,project=?,category=?,description=?,amount_cents=?,payment_status=?,handler=?,notes=?,updated_by=?,updated_by_name=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND version=?`, [...values,actor.id,actorName,id,req.body.version]);
         if (!result.affectedRows) {
           const [found] = await connection.query('SELECT id FROM cost_entries WHERE id=?',[id]);
-          throw fail(found.length ? '其他管理员已修改此记录，请刷新后重新编辑。' : '记录不存在。', found.length ? 409 : 404);
+          throw fail(found.length ? '其他人已修改此记录，请刷新后重新编辑。' : '记录不存在。', found.length ? 409 : 404);
         }
       } else {
         const [result] = await connection.query(`INSERT INTO cost_entries (cost_date,project,category,description,amount_cents,payment_status,handler,notes,created_by,created_by_name,updated_by,updated_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [...values,actor.id,actorName,actor.id,actorName]);

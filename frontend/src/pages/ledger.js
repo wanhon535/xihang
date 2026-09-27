@@ -30,15 +30,17 @@ function status(message, error = false) {
   $('status').classList.toggle('ledger-error', error);
 }
 function handleAuth(error) {
-  if (error.status !== 401 && error.status !== 403) return false;
+  // The ledger is shared by every logged-in account now, so a 403 usually
+  // means "not the owner of this entry" — a normal, in-place error for the
+  // caller to show, not a reason to sign the whole workspace out.
+  if (error.code === 'PASSWORD_CHANGE_REQUIRED') { window.location.href = '/change-password.html'; return true; }
+  if (error.status !== 401) return false;
   user = null;
   entries = [];
   $('rows').replaceChildren();
   $('ledgerWorkspace').hidden = true;
   if (dialog.open) closeDialogAnimated(dialog);
-  if (error.code === 'PASSWORD_CHANGE_REQUIRED') window.location.href = '/change-password.html';
-  else if (error.status === 401) redirectToLogin('登录已失效，请重新登录。');
-  else status('当前账号没有管理员台账权限。', true);
+  redirectToLogin('登录已失效，请重新登录。');
   return true;
 }
 function compare(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
@@ -73,14 +75,18 @@ function entryRow(entry) {
     row.append(cell);
   }
   const action = node('td');
-  const button = node('button', '编辑');
-  button.type = 'button';
-  button.setAttribute('aria-label', `编辑 ${entry.date} ${entry.project}`);
-  button.addEventListener('click', async () => {
-    await loadProjectSuggestions();
-    openEditor(entry);
-  });
-  action.append(button);
+  if (user && (user.role === 'admin' || String(entry.createdBy) === String(user.id))) {
+    const button = node('button', '编辑');
+    button.type = 'button';
+    button.setAttribute('aria-label', `编辑 ${entry.date} ${entry.project}`);
+    button.addEventListener('click', async () => {
+      await loadProjectSuggestions();
+      openEditor(entry);
+    });
+    action.append(button);
+  } else {
+    action.append(node('span', '—'));
+  }
   row.append(action);
   return row;
 }
@@ -133,7 +139,7 @@ function render() {
     const row = node('tr');
     const cell = node('td', undefined, 'ledger-empty');
     const title = entries.length ? '没有符合筛选条件的记录' : '还没有成本记录';
-    const hint = entries.length ? '调整条件，或重置筛选查看全部记录。' : '从新增一笔支出开始，所有管理员都会看到同一份台账。';
+    const hint = entries.length ? '调整条件，或重置筛选查看全部记录。' : '从新增一笔支出开始，全员共享同一份台账。';
     const icon = node('span', '↗', 'ledger-empty-icon');
     icon.setAttribute('aria-hidden', 'true');
     cell.colSpan = 12;
@@ -182,7 +188,7 @@ async function loadEntries() {
     $('summaryMonth').textContent = `${payload.month} · 元`;
     refreshOptions();
     render();
-    // Cleared rather than restating "所有管理员共享记录" — that's already in
+    // Cleared rather than restating who can see/edit what — that's already in
     // the page's own subtitle right above; a status line only needs to speak
     // up for loading/errors, not repeat what's already on screen.
     status('');
@@ -309,7 +315,7 @@ async function saveEntry(event) {
     if (handleAuth(error)) return;
     if (error.status === 409) {
       conflicted = true;
-      $('formStatus').textContent = '该记录已被其他管理员修改（409）。为防止覆盖，已停止保存。请保留需要的内容，取消后刷新列表，再重新编辑。';
+      $('formStatus').textContent = '该记录已被他人修改（409）。为防止覆盖，已停止保存。请保留需要的内容，取消后刷新列表，再重新编辑。';
     } else $('formStatus').textContent = error.status ? `保存失败：${error.message}` : `未能确认保存结果：${error.message}。请先取消并刷新列表核对，避免重复新增。`;
   } finally {
     saving = false;
@@ -390,13 +396,8 @@ async function init() {
   try {
     user = await requireUser();
     if (!user) return;
-    if (user.role !== 'admin') {
-      user = null;
-      status('当前账号没有管理员台账权限。', true);
-      return;
-    }
     setWorkspaceUser(user);
-    $('userName').textContent = user.nick || user.username || '管理员';
+    $('userName').textContent = user.nick || user.username || '成员';
     $('ledgerWorkspace').hidden = false;
     await loadProjectSuggestions();
     fillEntryProjectOptions(projectRegistry);

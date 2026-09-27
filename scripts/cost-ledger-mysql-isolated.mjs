@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import express from 'express';
 import { getPool } from '../backend/src/db.js';
@@ -11,7 +12,9 @@ if (!process.argv.includes('--run')) {
   console.log('Opt-in required: node scripts/cost-ledger-mysql-isolated.mjs --run');
   process.exit(0);
 }
-dotenv.config({ path: new URL('../.env', import.meta.url).pathname });
+// A URL .pathname keeps a leading slash before the drive letter on Windows
+// (e.g. "/E:/..."), which dotenv's fs.readFileSync silently fails to find.
+dotenv.config({ path: fileURLToPath(new URL('../.env', import.meta.url)) });
 const pool = getPool();
 const prefix = `cltest_${crypto.randomBytes(8).toString('hex')}_`;
 const tables = ['cost_entries', 'cost_attachments'].map(n => prefix + n);
@@ -75,13 +78,12 @@ try {
   // Synthetic HTTP-only sessions; no users/sessions/audit business tables touched.
   app.use((req, res, next) => {
     const who = req.get('x-test-actor');
-    req.session = { user: who ? { id: who === 'b' ? 2 : 1, nick: who === 'member' ? 'admin' : who, role: who === 'member' ? 'member' : 'admin' } : null };
+    req.session = { user: who ? { id: who === 'b' ? 2 : who === 'member' ? 3 : 1, nick: who, role: who === 'member' ? 'member' : 'admin' } : null };
     next();
   });
   app.use('/api/admin/costs', createCostRouter({
     db,
     requireLogin: (req, res, next) => req.session.user ? next() : res.status(401).json({ ok: false }),
-    requireAdmin: (req, res, next) => next(),
     writeAudit: async (req, action, type, id) => audits.push({ action, type, id })
   }));
   app.use((err, req, res, next) => res.status(500).json({ ok: false, code: err.code || 'TEST_ERROR' }));
@@ -94,12 +96,11 @@ try {
   });
   const input = { date: '2026-09-23', project: '隔离项目🚀', category: '设备', description: '真实数据库测试', amount: '999999999.99', paymentStatus: 'unpaid', handler: '测试经办人', notes: '不触碰业务数据' };
   const file = { name: '原始凭证.pdf', data: Buffer.from('%PDF-1.7\nisolated original').toString('base64') };
-  for (const path of ['', '/attachments/1']) {
-    assert.equal((await call(path, 'GET', undefined, null)).status, 401);
-    assert.equal((await call(path, 'GET', undefined, 'member')).status, 403);
-  }
-  assert.equal((await call('', 'POST', input, 'member')).status, 403);
-  step('anonymous 401 and persisted-role member 403 (including legacy admin nickname)');
+  assert.equal((await call('', 'GET', undefined, null)).status, 401);
+  assert.equal((await call('/attachments/1', 'GET', undefined, null)).status, 401);
+  assert.equal((await call('', 'GET', undefined, 'member')).status, 200); // shared ledger: any logged-in account can read
+  assert.equal((await call('/attachments/1', 'GET', undefined, 'member')).status, 404); // nothing uploaded yet, not a permission error
+  step('anonymous 401; a plain member is on the shared ledger, not blocked by role');
   for (const patch of [{ amount: '1.001' }, { amount: '0' }, { date: '2026-02-30' }, { attachment: { name: '../bad.pdf', data: file.data } }]) {
     assert.equal((await call('', 'POST', { ...input, ...patch })).status, 400);
   }
@@ -128,6 +129,8 @@ try {
   assert.match(response.headers.get('content-disposition'), /^attachment;/);
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from(file.data, 'base64'));
   step('attachment bytes and secure download headers');
+  assert.equal((await call(`/${id}`, 'PUT', { ...input, project: 'member cannot touch this', version: 1 }, 'member')).status, 403);
+  step('a member cannot edit an entry created by someone else');
 
   const updatedFile = { name: '更新凭证.pdf', data: Buffer.from('%PDF-1.7\nisolated replacement').toString('base64') };
   const update = { ...input, amount: '0.01', paymentStatus: 'paid', project: '第二管理员更新', version: 1, attachment: updatedFile };
@@ -198,7 +201,7 @@ try {
   step('no API DELETE (404); FK restriction; DB-level delete rollback and commit');
   assert.deepEqual(audits.map(a => a.action), ['cost.create', 'cost.update', 'cost.update', 'cost.create']);
   assert.equal(stats.commits, 5);
-  assert.equal(stats.rollbacks, 6);
+  assert.equal(stats.rollbacks, 7);
   console.log(JSON.stringify({ passed: passed.length, ...stats, auditEvents: audits.length }));
 } catch (error) {
   // Never log raw mysql errors: messages/SQL may include connection or business information.

@@ -163,6 +163,7 @@ export async function initDatabase() {
       group_id BIGINT UNSIGNED NOT NULL,
       name VARCHAR(160) NOT NULL,
       url VARCHAR(1000) NOT NULL,
+      icon_url VARCHAR(500) NOT NULL DEFAULT '',
       description VARCHAR(500) NOT NULL DEFAULT '',
       tags TEXT NULL,
       visibility VARCHAR(32) NOT NULL DEFAULT 'all',
@@ -1346,6 +1347,10 @@ async function ensureNavSitePermissionColumns(db) {
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nav_sites'`
   );
   const existingColumns = new Set(columns.map((column) => column.columnName));
+
+  if (!existingColumns.has('icon_url')) {
+    await db.query("ALTER TABLE nav_sites ADD COLUMN icon_url VARCHAR(500) NOT NULL DEFAULT '' AFTER url");
+  }
 
   if (!existingColumns.has('visibility')) {
     await db.query("ALTER TABLE nav_sites ADD COLUMN visibility VARCHAR(32) NOT NULL DEFAULT 'all' AFTER tags");

@@ -1,5 +1,7 @@
 # 成本台账后端接口 contract
 
+> **2026-09 更新：** 下面"权限"一节描述的 requireAdmin 门禁已被取代——现在只需 requireLogin，编辑按 createdBy 归属校验（本人或管理员）。这是当时实现的历史记录，不代表当前行为，当前实现见 `backend/src/cost-ledger.js`。
+
 ## 接入与权限
 - 基址：`/api/admin/costs`，沿用 `tidesail_sid` session cookie；fetch 使用 `credentials: 'include'`。
 - server.js 已挂载 router；db.js 的 initDatabase 调用 initCostLedger，建表发生在未来服务启动时。本次没有启动生产代码、执行生产迁移或重启。

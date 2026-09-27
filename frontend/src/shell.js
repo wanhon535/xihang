@@ -303,7 +303,9 @@ export function setWorkspaceUser(user) {
   const tabs = document.querySelector('.workspace-tabs');
   const notifyBtn = document.querySelector('#notifyBtn');
   if (notifyBtn) notifyBtn.hidden = !allowed;
-  const pages = [['/', '工作台'], ['/vault.html', '星钥库'], ...(allowed ? [['/admin.html', '管理中枢'], ['/ledger.html', '成本台账'], ['/screen.html', '数据大屏']] : [])];
+  // Ledger and the knowledge base are shared with every account now, not just
+  // admins — only the admin console and the data screen stay admin-only.
+  const pages = [['/', '工作台'], ['/vault.html', '星钥库'], ['/ledger.html', '成本台账'], ['/knowledge.html', '知识库'], ...(allowed ? [['/admin.html', '管理中枢'], ['/screen.html', '数据大屏']] : [])];
   const closed = readSet('tidesail.tabs.closed');
   const currentPath = window.location.pathname;
   if (closed.has(currentPath)) { closed.delete(currentPath); writeSet('tidesail.tabs.closed', closed); }

@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => {
         admin: resolve(__dirname, 'frontend/admin.html'),
         vault: resolve(__dirname, 'frontend/vault.html'),
         ledger: resolve(__dirname, 'frontend/ledger.html'),
+        knowledge: resolve(__dirname, 'frontend/knowledge.html'),
         screen: resolve(__dirname, 'frontend/screen.html')
       }
     }

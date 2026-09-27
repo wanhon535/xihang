@@ -2,9 +2,7 @@
 
 > 汐航要作为公司内部系统的唯一入口。以后任何新系统只要希望"从汐航点进去自动登录"，都按这份文档接入即可，不需要单独设计鉴权方案。把这份文档整篇丢给负责该系统的开发者或 AI 助手就够了。
 
-**汐航部署地址：`http://42.193.159.241:9988`**（前端和 API 是同一个地址，`/api/...` 直接拼在后面即可）。
-
-> ⚠️ 目前是纯 HTTP，不是 HTTPS。ticket 本身是敏感信息（见下面"安全上必须遵守的几条"），如果这个地址只在公司内网/VPN 里能访问，风险可控；如果以后要暴露到公网，接入前请先跟汐航管理员确认是否已经上了 HTTPS。
+**汐航部署地址：`https://xigouoa.xyz`**（前端和 API 是同一个地址，`/api/...` 直接拼在后面即可）。已启用 HTTPS，ticket 在传输过程中是加密的。
 
 ## 一句话说清楚这是什么
 
@@ -32,7 +30,7 @@ https://你的系统域名/任意路径?sso_ticket=<64位十六进制字符串>&
 ### 2. 服务端用 ticket 换身份（一次性，必须在服务端做）
 
 ```http
-POST http://42.193.159.241:9988/api/sso/verify
+POST https://xigouoa.xyz/api/sso/verify
 Content-Type: application/json
 
 { "ticket": "拿到的那个 sso_ticket 值" }
@@ -77,7 +75,7 @@ Content-Type: application/json
 除了前面两步，你还需要给系统本身补两样东西：
 
 1. **给所有需要保护的页面/接口加一层"必须登录"的校验**（各框架叫法不同，session middleware / auth guard 都是这个意思）：没有本地登录态（session/cookie）的请求，一律不放行。
-2. **没登录时不要自己造登录页，直接跳回汐航**：因为你的系统本来就没有账号密码体系，正确的做法是重定向到汐航首页 `http://42.193.159.241:9988/`，让用户在汐航那边登录（账号密码或钉钉扫码），登录后从汐航的应用目录点回你的系统入口——这时候才会带着 ticket 跳回来，走前面讲的换身份流程。
+2. **没登录时不要自己造登录页，直接跳回汐航**：因为你的系统本来就没有账号密码体系，正确的做法是重定向到汐航首页 `https://xigouoa.xyz/`，让用户在汐航那边登录（账号密码或钉钉扫码），登录后从汐航的应用目录点回你的系统入口——这时候才会带着 ticket 跳回来，走前面讲的换身份流程。
 
 伪代码（在原来的 `/sso-callback` 路由基础上，再加一层全局校验）：
 
@@ -86,7 +84,7 @@ Content-Type: application/json
 app.use((req, res, next) => {
   if (req.path === '/sso-callback') return next(); // 换身份的回调路由本身不能被这层拦住
   if (req.session.userId) return next(); // 已经建立过本地登录态，放行
-  res.redirect('http://42.193.159.241:9988/'); // 没登录：跳回汐航，走 SSO
+  res.redirect('https://xigouoa.xyz/'); // 没登录：跳回汐航，走 SSO
 });
 ```
 
@@ -110,7 +108,9 @@ app.use((req, res, next) => {
 2. **ticket 是一次性的**：换过一次之后立刻失效（数据库事务里原子标记 `consumed_at`），不会给你第二次换的机会，也不需要你自己做防重放。
 3. **ticket 有效期很短**：默认 120 秒，汐航管理员可以在 30~3600 秒之间调整（管理中枢 → 安全策略 → SSO 票据有效秒数）。你的系统收到带 `sso_ticket` 的请求后要**立刻**去换，不要先做别的耗时操作再换。
 4. **换身份失败要给用户一个清楚的提示**（比如"登录已过期，请重新从汐航进入"），并给一个能回到汐航首页的链接，不要死循环重定向。
-5. `/api/sso/verify` 最好走 HTTPS。目前汐航的部署地址还是明文 HTTP（见开头说明），只要还是这样，就等于 ticket 在公司网络里是明文传输的——只接受能访问这个内网/VPN 地址的调用方，不要把这个 verify 调用暴露到公网出口。
+5. 汐航已经是 HTTPS 部署，`/api/sso/verify` 走的就是加密传输，不需要额外担心明文泄露；但 ticket 依然是"谁拿到谁能换身份"的敏感值，还是要遵守前面几条（服务端调用、一次性、短时效）。
+6. **你的系统接收跳转的那个地址，也必须是 HTTPS**，不能是 http。ticket 是跟在跳转 URL 的 query string 上传过来的，汐航这边是加密传输，但如果你的系统入口还是 http，ticket 到你这一段就会变成明文，前面的加固等于白做了一半。
+7. **网关/Nginx 访问日志默认会把完整 URL（包括 `sso_ticket` 参数）记下来**，请在你的接入日志里把这个参数脱敏或直接过滤掉，避免 ticket 明文留在日志文件里被翻出来（虽然过期很快，但换身份前的这段时间窗口依然有效）。
 
 ## 服务端伪代码（Node/Express 举例，其他语言照抄逻辑就行）
 
@@ -119,7 +119,7 @@ app.get('/sso-callback', async (req, res) => {
   const ticket = req.query.sso_ticket;
   if (!ticket) return res.redirect('/'); // 没带 ticket，走你自己的正常登录页
 
-  const resp = await fetch('http://42.193.159.241:9988/api/sso/verify', {
+  const resp = await fetch('https://xigouoa.xyz/api/sso/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ticket })

@@ -55,6 +55,13 @@ const siteScopeRolesBox = document.querySelector('#siteScopeRoles');
 const siteScopeUsersBox = document.querySelector('#siteScopeUsers');
 const siteScopeCancelBtn = document.querySelector('#siteScopeCancelBtn');
 const siteScopeSaveBtn = document.querySelector('#siteScopeSaveBtn');
+// The scope dialog edits a draft, not `site` directly — otherwise every
+// checkbox click would already be "saved" in memory and Cancel/Escape would
+// do nothing (the next unrelated autosave would silently persist it anyway).
+let scopeDialogSite = null;
+let scopeDialogPreviousVisibility = null;
+let scopeDialogDraftRoles = [];
+let scopeDialogDraftUserIds = [];
 const rosterSettingsForm = document.querySelector('#rosterSettingsForm');
 const rosterSettingsStatus = document.querySelector('#rosterSettingsStatus');
 const rosterSyncBtn = document.querySelector('#rosterSyncBtn');
@@ -134,8 +141,25 @@ addGroupBtn.addEventListener('click', () => {
   scheduleAutoSave();
 });
 saveBtn.addEventListener('click', () => saveGroups(false));
-siteScopeCancelBtn.addEventListener('click', () => closeDialogAnimated(siteScopeDialog));
+function discardSiteScopeDialog() {
+  // Undo the dropdown's optimistic switch to "roles"/"users" if the user
+  // backs out without confirming — otherwise the site is left stuck in that
+  // mode (usually with an empty selection, i.e. visible to nobody) even
+  // though nothing was actually configured.
+  if (scopeDialogSite && scopeDialogSite.visibility !== scopeDialogPreviousVisibility) {
+    scopeDialogSite.visibility = scopeDialogPreviousVisibility;
+    renderGroups();
+  }
+  scopeDialogSite = null;
+  closeDialogAnimated(siteScopeDialog);
+}
+siteScopeCancelBtn.addEventListener('click', discardSiteScopeDialog);
 siteScopeSaveBtn.addEventListener('click', () => {
+  if (scopeDialogSite) {
+    scopeDialogSite.allowedRoles = scopeDialogDraftRoles;
+    scopeDialogSite.allowedUserIds = scopeDialogDraftUserIds;
+  }
+  scopeDialogSite = null;
   closeDialogAnimated(siteScopeDialog);
   renderGroups();
   scheduleAutoSave();
@@ -143,7 +167,7 @@ siteScopeSaveBtn.addEventListener('click', () => {
 });
 siteScopeDialog.addEventListener('cancel', (event) => {
   event.preventDefault();
-  closeDialogAnimated(siteScopeDialog);
+  discardSiteScopeDialog();
 });
 addProjectBtn.addEventListener('click', () => openProjectEditor(null));
 projectCancelBtn.addEventListener('click', () => { if (!projectForm.dataset.saving) closeDialogAnimated(projectDialog); });
@@ -639,14 +663,18 @@ function renderSiteAccessEditor(site) {
     option('users', '指定成员', site.visibility)
   ].join('');
   visibilitySelect.addEventListener('change', () => {
+    const previousVisibility = site.visibility;
     site.visibility = visibilitySelect.value;
     if (site.visibility === 'roles' && site.allowedRoles.length === 0) {
       site.allowedRoles = ['member'];
     }
     renderGroups();
-    scheduleAutoSave();
     if (site.visibility === 'roles' || site.visibility === 'users') {
-      openSiteScopeDialog(site);
+      // Don't autosave yet — the scope dialog opens next, and cancelling it
+      // should be able to fully back out of this switch (see discardSiteScopeDialog).
+      openSiteScopeDialog(site, previousVisibility);
+    } else {
+      scheduleAutoSave();
     }
   });
 
@@ -670,7 +698,11 @@ function renderSiteAccessEditor(site) {
   return wrapper;
 }
 
-function openSiteScopeDialog(site) {
+function openSiteScopeDialog(site, previousVisibility = site.visibility) {
+  scopeDialogSite = site;
+  scopeDialogPreviousVisibility = previousVisibility;
+  scopeDialogDraftRoles = [...site.allowedRoles];
+  scopeDialogDraftUserIds = [...site.allowedUserIds];
   siteScopeRolesBox.innerHTML = '';
   siteScopeUsersBox.innerHTML = '';
 
@@ -685,9 +717,9 @@ function openSiteScopeDialog(site) {
       const checkboxLabel = el('label', 'access-check');
       const checkbox = el('input');
       checkbox.type = 'checkbox';
-      checkbox.checked = site.allowedRoles.includes(value);
+      checkbox.checked = scopeDialogDraftRoles.includes(value);
       checkbox.addEventListener('change', () => {
-        site.allowedRoles = toggleListValue(site.allowedRoles, value, checkbox.checked);
+        scopeDialogDraftRoles = toggleListValue(scopeDialogDraftRoles, value, checkbox.checked);
       });
       checkboxLabel.append(checkbox, el('span', '', label));
       siteScopeRolesBox.appendChild(checkboxLabel);
@@ -707,9 +739,9 @@ function openSiteScopeDialog(site) {
       const checkboxLabel = el('label', 'access-check member-check');
       const checkbox = el('input');
       checkbox.type = 'checkbox';
-      checkbox.checked = site.allowedUserIds.includes(userId);
+      checkbox.checked = scopeDialogDraftUserIds.includes(userId);
       checkbox.addEventListener('change', () => {
-        site.allowedUserIds = toggleListValue(site.allowedUserIds, userId, checkbox.checked);
+        scopeDialogDraftUserIds = toggleListValue(scopeDialogDraftUserIds, userId, checkbox.checked);
       });
       checkboxLabel.append(checkbox, el('span', '', userDisplayName(user)));
       siteScopeUsersBox.appendChild(checkboxLabel);
@@ -853,9 +885,12 @@ async function loadWikiDocs() {
   try {
     const payload = await api('/api/knowledge-base');
     renderWikiDocs(payload.docs || []);
-  } catch {
+  } catch (error) {
     // Knowledge-base list is secondary content on this panel; a failed
     // refresh shouldn't block the rest of the admin console from loading.
+    // But silently leaving the container empty made a real fetch failure
+    // look identical to "nothing synced yet" — show the error instead.
+    wikiDocListBody.innerHTML = `<div class="empty-card">知识库列表加载失败：${escapeHtml(error.message)}</div>`;
   }
 }
 

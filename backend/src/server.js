@@ -157,7 +157,7 @@ app.use(
   })
 );
 
-app.use('/api/admin/costs', createCostRouter({ db: getPool(), requireLogin, requireAdmin, writeAudit }));
+app.use('/api/admin/costs', createCostRouter({ db: getPool(), requireLogin, writeAudit }));
 app.use('/api/admin/dashboard', createDashboardRouter({ db: getPool(), requireLogin, requireAdmin, listProjects }));
 
 setInterval(pruneRateLimitBuckets, 1000 * 60).unref();
@@ -1041,7 +1041,9 @@ app.put('/api/admin/groups', requireLogin, requireAdmin, async (req, res, next) 
   }
 });
 
-app.get('/api/admin/projects', requireLogin, requireAdmin, async (req, res, next) => {
+// Read-only: any logged-in user needs this list for the cost ledger's project
+// dropdown now that ledger entries are open to all staff, not just admins.
+app.get('/api/admin/projects', requireLogin, async (req, res, next) => {
   try {
     res.json({ ok: true, projects: await listProjects() });
   } catch (error) {

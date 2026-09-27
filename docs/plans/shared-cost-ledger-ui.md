@@ -1,5 +1,7 @@
 # TideSail 共享成本台账与全站样式 Implementation Plan
 
+> **2026-09 更新：** 本文档 Goal 里"普通成员无访问权限"已被后续改动取代——成本台账现在对全员开放读写，编辑仅限本人记录或管理员，详见 `backend/src/cost-ledger.js` 和 `frontend/src/pages/ledger.js` 当前实现。这段历史记录保留原样，不代表当前行为。
+
 > **For Hermes:** 按 TDD 逐项实施，本次不提交、不重启生产，主 agent 审查发布。
 
 **Goal:** 所有管理员共用成本记录与凭证，普通成员无访问权限；统一所有现有页面基础视觉与交互状态。
