@@ -8,7 +8,10 @@ const $ = id => document.getElementById(id);
 const form = $('entryForm');
 const dialog = $('editDialog');
 const endpoint = '/api/admin/costs';
-const filterKeys = ['search', 'month', 'project', 'category', 'paymentStatus'];
+// 单值筛选字段；项目 / 类别走多选（见 selections），不在这里
+const singleFilterKeys = ['search', 'month', 'paymentStatus'];
+// 项目 / 类别多选：集合为空 = 不筛（即「全部」）
+const selections = { project: new Set(), category: new Set() };
 const fields = ['date', 'project', 'category', 'amount', 'paymentStatus', 'handler', 'description', 'notes'];
 // 项目管理里登记的项目（来源 /api/admin/projects），用于新增成本弹窗的下拉。
 let projectRegistry = [];
@@ -168,6 +171,16 @@ function entryRow(entry) {
   row.append(action);
   return row;
 }
+// 当前筛选条件：项目 / 类别是多选数组，空数组即「全部」
+function currentFilters() {
+  return {
+    search: $('search').value,
+    month: $('month').value,
+    paymentStatus: $('paymentStatus').value,
+    project: [...selections.project],
+    category: [...selections.category]
+  };
+}
 function renderInsights(visible) {
   const total = totalCents(visible);
   const paid = totalCents(visible.filter(entry => entry.paymentStatus === 'paid'));
@@ -175,8 +188,11 @@ function renderInsights(visible) {
   $('paymentProgress').value = percent;
   $('paymentProgressLabel').textContent = visible.length ? `${percent}% 已付款` : '暂无支出记录';
   $('paymentProgressHint').textContent = visible.length ? `已付 ¥${money(paid)} · 待付 ¥${money(total - paid)}` : '新增成本或调整筛选条件，查看付款进度。';
-  renderBreakdown('categoryBreakdown', visible, 'category', '尚无分类支出，新增记录后将自动汇总。');
-  renderBreakdown('projectBreakdown', visible, 'project', '尚无项目支出，新增记录后将自动汇总。');
+  // 两个分布各自「先排除自己这一维」再统计：点掉某个类别后，其它类别仍留在榜上，
+  // 才能继续多选。否则一点就只剩一项，多选无从下手。
+  const filters = currentFilters();
+  renderBreakdown('categoryBreakdown', filterEntries(entries, { ...filters, category: [] }), 'category', '尚无分类支出，新增记录后将自动汇总。');
+  renderBreakdown('projectBreakdown', filterEntries(entries, { ...filters, project: [] }), 'project', '尚无项目支出，新增记录后将自动汇总。');
 }
 // 「支出分类」和「项目分布」共用一个渲染器，两个维度口径完全一致。
 function renderBreakdown(targetId, visible, key, emptyText) {
@@ -193,20 +209,99 @@ function renderBreakdown(targetId, visible, key, emptyText) {
   list.replaceChildren();
   if (!ranked.length) { list.append(node('p', emptyText, 'insight-empty')); return; }
   for (const [name, amount] of ranked) {
-    const row = node('div', undefined, 'category-bar');
-    row.append(node('span', name), node('strong', `¥${money(amount)}`), node('em', `${counts.get(name)} 笔`));
+    const active = selections[key].has(name);
+    const bar = node('button', undefined, 'category-bar');
+    bar.type = 'button';
+    bar.dataset.value = name;
+    bar.classList.toggle('is-selected', active);
+    bar.setAttribute('aria-pressed', String(active));
+    bar.setAttribute('aria-label', `${active ? '取消筛选' : '筛选'}${MULTI_NOUNS[key]}「${name}」，共 ${counts.get(name)} 笔 ¥${money(amount)}`);
+    bar.append(node('span', name), node('strong', `¥${money(amount)}`), node('em', `${counts.get(name)} 笔`));
     const progress = node('progress');
     progress.max = 100;
     progress.value = total > 0n ? Number(amount * 1000n / total) / 10 : 0;
-    progress.setAttribute('aria-label', `${name}占支出${progress.value}%`);
-    row.append(progress);
-    list.append(row);
+    progress.setAttribute('aria-hidden', 'true');
+    bar.append(progress);
+    bar.addEventListener('click', () => toggleSelection(key, name));
+    list.append(bar);
   }
 }
+// ---------- 项目 / 类别 多选筛选 ----------
+// 点概览里的条 = 切换该维度的筛选；集合为空表示不筛（全部）。也可以从下拉里勾。
+const MULTI_NOUNS = { project: '项目', category: '类别' };
+function multiInputs(key) {
+  const inputs = [];
+  for (const child of $(`${key}Options`).children || []) {
+    const input = child.children && child.children[0];
+    if (input && input.tagName === 'INPUT') inputs.push(input);
+  }
+  return inputs;
+}
+function toggleSelection(key, value) {
+  if (selections[key].has(value)) selections[key].delete(value);
+  else selections[key].add(value);
+  render();
+}
+function selectAllIn(key) { for (const input of multiInputs(key)) selections[key].add(input.value); render(); }
+function clearSelection(key) { selections[key].clear(); render(); }
+function clearAllSelections() { selections.project.clear(); selections.category.clear(); render(); }
+function syncMultiLabels() {
+  for (const key of ['project', 'category']) {
+    const selected = [...selections[key]];
+    const toggle = $(`${key}Toggle`);
+    toggle.textContent = !selected.length ? `全部${MULTI_NOUNS[key]}`
+      : selected.length === 1 ? selected[0]
+      : `${MULTI_NOUNS[key]}：已选 ${selected.length} 项`;
+    toggle.classList.toggle('is-active', selected.length > 0);
+    toggle.setAttribute('aria-expanded', String(!$(`${key}Panel`).hidden));
+  }
+}
+// 勾选框 / 按钮文案 / chips 三者都从 selections 派生，避免各处状态漂移
+function syncMultiState() {
+  for (const key of ['project', 'category']) {
+    for (const input of multiInputs(key)) input.checked = selections[key].has(input.value);
+  }
+  syncMultiLabels();
+  renderActiveFilters();
+}
+function renderActiveFilters() {
+  const wrap = $('activeFilters');
+  const chips = [];
+  for (const key of ['project', 'category']) {
+    for (const value of [...selections[key]].sort((a, b) => a.localeCompare(b, 'zh-CN'))) {
+      const chip = node('span', undefined, 'ledger-chip');
+      chip.append(node('span', `${MULTI_NOUNS[key]}：${value}`));
+      const remove = node('button', '×');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', `移除筛选 ${MULTI_NOUNS[key]}：${value}`);
+      remove.addEventListener('click', () => { selections[key].delete(value); render(); });
+      chip.append(remove);
+      chips.push(chip);
+    }
+  }
+  wrap.replaceChildren();
+  if (!chips.length) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  const clear = node('button', '清空全部', 'ledger-clear-all');
+  clear.type = 'button';
+  clear.addEventListener('click', clearAllSelections);
+  wrap.append(node('span', `已选 ${chips.length} 项筛选：`), ...chips, clear);
+}
+function toggleMultiPanel(key, force) {
+  const panel = $(`${key}Panel`);
+  const open = force === undefined ? panel.hidden : force;
+  for (const other of ['project', 'category']) if (other !== key) $(`${other}Panel`).hidden = true;
+  panel.hidden = !open;
+  syncMultiLabels();
+}
+function closeMultiPanels() {
+  for (const key of ['project', 'category']) $(`${key}Panel`).hidden = true;
+  syncMultiLabels();
+}
 function render() {
-  const filters = Object.fromEntries(filterKeys.map(key => [key, $(key).value]));
-  const visible = sorted(filterEntries(entries, filters));
+  const visible = sorted(filterEntries(entries, currentFilters()));
   renderInsights(visible);
+  syncMultiState();
   $('resultCount').textContent = `显示 ${visible.length} / ${entries.length} 笔 · 筛选合计 ¥${money(totalCents(visible))}`;
   const fragment = document.createDocumentFragment();
   const groupKey = $('group').value;
@@ -240,33 +335,34 @@ function render() {
   }
   $('rows').replaceChildren(fragment);
 }
+// 项目 / 类别的多选列表。选项来自台账里已出现的值；已被选中的值即使当前结果集里没有
+// 也保留，避免筛选条件被悄悄清掉。
 function refreshOptions() {
   for (const key of ['project', 'category']) {
-    const select = $(key);
-    const previous = select.value;
-    const values = [...new Set(entries.map(entry => entry[key]))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
-    const all = node('option', key === 'project' ? '全部项目' : '全部类别');
-    all.value = '';
-    select.replaceChildren(all);
-    $(`${key}Suggestions`).replaceChildren();
+    const values = [...new Set(entries.map(entry => entry[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    for (const selected of selections[key]) if (!values.includes(selected)) values.push(selected);
+    const list = $(`${key}Options`);
+    list.replaceChildren();
+    if (!values.length) { list.append(node('p', '暂无可选项', 'insight-empty')); continue; }
     for (const value of values) {
-      const option = node('option', value);
-      option.value = value;
-      select.append(option);
-      const suggestion = node('option');
-      suggestion.value = value;
-      $(`${key}Suggestions`).append(suggestion);
+      const option = node('label', undefined, 'ledger-multi-option');
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.value = value;
+      box.checked = selections[key].has(value);
+      // 以勾选框自身状态为准，避免和 selections 漂移
+      box.addEventListener('change', () => {
+        if (box.checked) selections[key].add(value);
+        else selections[key].delete(value);
+        render();
+      });
+      option.append(box, node('span', value));
+      list.append(option);
     }
-    // Keep active filters even when another administrator renames the last matching entry.
-    if (previous && !values.includes(previous)) {
-      const option = node('option', previous);
-      option.value = previous;
-      select.append(option);
-    }
-    select.value = previous;
   }
   // 新增/编辑弹窗的类别下拉与此同源，避免「下面的筛选有、上面录入时反而没有」。
   categoryRegistry = [...new Set(entries.map(entry => entry.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+  syncMultiState();
 }
 async function loadEntries() {
   if (!user || loading) return false;
@@ -582,10 +678,26 @@ async function downloadAttachment(entry, button) {
     if (!handleAuth(error)) status(`凭证下载失败：${error.message}`, true);
   } finally { button.disabled = false; }
 }
-for (const key of [...filterKeys, 'sort', 'group']) $(key).addEventListener(key === 'search' ? 'input' : 'change', render);
+for (const key of [...singleFilterKeys, 'sort', 'group']) $(key).addEventListener(key === 'search' ? 'input' : 'change', render);
+// 多选筛选：开关面板 / 全选 / 清空 / 点到外面或按 Esc 收起
+$('projectToggle').addEventListener('click', () => toggleMultiPanel('project'));
+$('categoryToggle').addEventListener('click', () => toggleMultiPanel('category'));
+$('projectAll').addEventListener('click', () => selectAllIn('project'));
+$('categoryAll').addEventListener('click', () => selectAllIn('category'));
+$('projectNone').addEventListener('click', () => clearSelection('project'));
+$('categoryNone').addEventListener('click', () => clearSelection('category'));
+document.addEventListener('click', event => {
+  const target = event.target;
+  if (target && typeof target.closest === 'function' && target.closest('.ledger-multi')) return;
+  closeMultiPanels();
+});
+document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMultiPanels(); });
 $('resetBtn').addEventListener('click', () => {
-  for (const key of [...filterKeys, 'group']) $(key).value = '';
+  for (const key of [...singleFilterKeys, 'group']) $(key).value = '';
   $('sort').value = 'date-desc';
+  selections.project.clear();
+  selections.category.clear();
+  closeMultiPanels();
   render();
 });
 $('newBtn').addEventListener('click', async () => {

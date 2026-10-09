@@ -84,6 +84,38 @@
 .voucher-viewer img{width:100%;max-height:64vh;object-fit:contain;border:1px solid #d8e1eb;border-radius:10px;background:#f5f8fb}
 .voucher-viewer .ledger-voucher-name{max-width:none;font-size:12px}
 #voucherDialog{width:min(900px,calc(100vw - 32px))}
+/* ---------- 项目 / 类别 多选筛选（点概览里的条也能筛） ---------- */
+.ledger-filter-field{display:flex;flex-direction:column;gap:6px;color:#41556b;font-size:12px;font-weight:600;min-width:0}
+.ledger-multi{position:relative;display:block;min-width:0}
+/* 用 .vben-shell.console-page.ledger-page 提高优先级，盖过 admin-layout 的全局 button 皮肤 */
+.vben-shell.console-page.ledger-page .ledger-multi-toggle{display:block;width:100%;box-sizing:border-box;min-height:0;padding:9px 10px;border:1px solid #d8e1eb;border-radius:8px;background:#fff;color:#34465c;font:inherit;font-size:13px;font-weight:400;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:none}
+.vben-shell.console-page.ledger-page .ledger-multi-toggle::after{content:'▾';float:right;color:#8ba7bf}
+.vben-shell.console-page.ledger-page .ledger-multi-toggle.is-active{border-color:#0e7490;color:#0e7490;font-weight:600}
+.vben-shell.console-page.ledger-page .ledger-multi-toggle.is-active::after{color:#0e7490}
+.vben-shell.console-page.ledger-page .ledger-multi-toggle:hover{background:#f7fbfc;border-color:#9ecbd8}
+/* 面板用正常流而不是绝对定位：外层 .ledger-panel 有 overflow:hidden，绝对定位会被裁掉 */
+.ledger-multi-panel{margin-top:6px;max-height:260px;overflow:auto;padding:10px;border:1px solid #d8e1eb;border-radius:8px;background:#fff;box-shadow:0 10px 26px #18324a14}
+.ledger-multi-panel[hidden]{display:none}
+.ledger-multi-tools{display:flex;gap:16px;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid #edf1f5}
+.vben-shell.console-page.ledger-page .ledger-multi-tools .ledger-link{max-width:none;min-height:0;padding:0;border:0;background:transparent;font-size:12px;font-weight:400;color:#0e7490;text-decoration:underline;cursor:pointer}
+.ledger-multi-list{display:flex;flex-direction:column;gap:2px}
+.ledger-page .ledger-multi-option{display:flex;flex-direction:row;align-items:center;gap:8px;margin:0;padding:5px 6px;border-radius:6px;font-weight:400;font-size:13px;color:#34465c;cursor:pointer}
+.ledger-page .ledger-multi-option:hover{background:#f0f7fa}
+.ledger-page .ledger-multi-option input{width:auto;margin:0;flex:0 0 auto}
+.ledger-multi-option span{overflow-wrap:anywhere}
+/* 已选条件 chips */
+.ledger-active-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 24px;border-bottom:1px solid #e3e9f0;background:#fafcfd}
+.ledger-active-filters[hidden]{display:none}
+.ledger-active-filters>span:first-child{color:#65768b;font-size:12px}
+.ledger-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 6px 3px 10px;border:1px solid #9ecbd8;border-radius:999px;background:#eaf6f9;color:#0e7490;font-size:12px;white-space:nowrap}
+.vben-shell.console-page.ledger-page .ledger-chip button{min-height:0;padding:0 3px;border:0;border-radius:999px;background:transparent;color:#0e7490;font-size:13px;line-height:1;cursor:pointer}
+.vben-shell.console-page.ledger-page .ledger-chip button:hover{background:transparent;color:#b42318}
+.vben-shell.console-page.ledger-page .ledger-clear-all{min-height:0;padding:0;border:0;background:transparent;color:#0e7490;font-size:12px;font-weight:400;text-decoration:underline;cursor:pointer}
+/* 概览里的条现在可点击筛选：清掉全局按钮皮肤 */
+.vben-shell.console-page.ledger-page .category-bar{min-height:0;padding:4px 6px;border:0;border-radius:6px;background:transparent;color:inherit;font-weight:400;white-space:normal;box-shadow:none;text-align:left;width:100%;box-sizing:border-box;cursor:pointer}
+.vben-shell.console-page.ledger-page .category-bar:hover{background:#f0f7fa;border-color:transparent;color:inherit}
+.vben-shell.console-page.ledger-page .category-bar.is-selected{background:#eaf6f9;box-shadow:inset 0 0 0 1px #7fc2d4}
+.vben-shell.console-page.ledger-page .category-bar.is-selected span{color:#0e7490;font-weight:600}
 .ledger-dialog-actions{display:flex;justify-content:flex-end;gap:10px;padding-top:16px;border-top:1px solid #e3e9f0}
 .ledger-page #formStatus{min-height:22px;overflow-wrap:anywhere}
 @media(max-width:1100px){.ledger-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.ledger-stats article{padding:18px}}

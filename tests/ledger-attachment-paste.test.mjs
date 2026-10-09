@@ -516,3 +516,113 @@ test('页面标记：类别是下拉、有项目分布面板与凭证大图弹�
   assert.match(LEDGER_HTML, /id="voucherDialog"/, '应有凭证大图弹窗');
   assert.match(LEDGER_HTML, /id="voucherImage"/);
 });
+
+// ---------------- 本轮新增：点概览条做多选筛选 ----------------
+
+const barsOf = ($, id) => $(id).children;
+const barByValue = ($, id, value) => barsOf($, id).find(bar => bar.dataset && bar.dataset.value === value);
+const renderedRows = $ => { const wrap = $('rows').children[0]; return wrap ? (wrap.children || []).length : 0; };
+const chipOf = ($, className) => $('activeFilters').children.find(child => typeof child.className === 'string' && child.className.includes(className));
+
+test('点类别条筛选：点一个筛一个，再点一个变多选，取消后回到全部', async () => {
+  const page = await bootLedgerPage({ entries: FIXTURE });
+  const { $ } = page;
+  assert.equal(renderedRows($), 3, '默认不点任何东西 = 全部');
+
+  await barByValue($, 'categoryBreakdown', '采购').fire('click', {});
+  assert.equal(renderedRows($), 1, '只点「采购」→ 只剩 1 条');
+  assert.equal(barByValue($, 'categoryBreakdown', '采购').getAttribute('aria-pressed'), 'true');
+  assert.equal($('categoryToggle').textContent, '采购', '下拉按钮显示当前选择');
+  // 关键：选中之后其它类别仍留在榜上，否则没有「多选」这回事
+  assert.equal(barsOf($, 'categoryBreakdown').length, 2, '选完后另一个类别仍在榜上');
+
+  await barByValue($, 'categoryBreakdown', '跨境电商').fire('click', {});
+  assert.equal(renderedRows($), 3, '再叠「跨境电商」→ 两类都算，回到 3 条');
+  assert.equal($('categoryToggle').textContent, '类别：已选 2 项');
+  assert.equal($('activeFilters').hidden, false, '应出现已选条件条');
+  assert.equal(chipOf($, 'ledger-chip') !== undefined, true, '应有可移除的 chip');
+
+  await barByValue($, 'categoryBreakdown', '采购').fire('click', {});
+  await barByValue($, 'categoryBreakdown', '跨境电商').fire('click', {});
+  assert.equal(renderedRows($), 3, '全部取消后回到全部');
+  assert.equal($('activeFilters').hidden, true, '没有已选就不显示条件条');
+  assert.equal($('categoryToggle').textContent, '全部类别');
+});
+
+test('类别和项目两个维度叠加筛选（AND），chip 可单个移除、也能一键清空', async () => {
+  const page = await bootLedgerPage({ entries: FIXTURE });
+  const { $ } = page;
+
+  await barByValue($, 'categoryBreakdown', '跨境电商').fire('click', {});
+  assert.equal(renderedRows($), 2, '类别=跨境电商 → 2 条');
+  await barByValue($, 'projectBreakdown', '1060U').fire('click', {});
+  assert.equal(renderedRows($), 1, '再叠加项目=1060U → 1 条');
+
+  // chips 顺序：项目在前、类别在后
+  const projectChip = chipOf($, 'ledger-chip');
+  await projectChip.children[1].fire('click', {});
+  assert.equal(renderedRows($), 2, '移除项目筛选后回到该类别全部');
+
+  const clear = chipOf($, 'ledger-clear-all');
+  await clear.fire('click', {});
+  assert.equal(renderedRows($), 3, '清空全部 → 回到全部');
+  assert.equal($('activeFilters').hidden, true);
+  assert.equal($('projectToggle').textContent, '全部项目');
+});
+
+test('下拉里勾选同样能多选筛选，并和概览条状态互通', async () => {
+  const page = await bootLedgerPage({ entries: FIXTURE });
+  const { $ } = page;
+  const boxes = $('categoryOptions').children.map(child => child.children[0]);
+  assert.equal(boxes.length, 2, '两个类别各一个勾选框');
+  const target = boxes.find(box => box.value === '采购');
+  target.checked = true;
+  await target.fire('change', {});
+  assert.equal(renderedRows($), 1, '勾「采购」→ 1 条');
+  assert.equal($('categoryToggle').classList.contains('is-active'), true, '按钮应进入选中态');
+  // 概览里对应的条也应变成已选
+  assert.equal(barByValue($, 'categoryBreakdown', '采购').getAttribute('aria-pressed'), 'true');
+});
+
+test('「重置筛选」会清掉多选条件', async () => {
+  const page = await bootLedgerPage({ entries: FIXTURE });
+  const { $ } = page;
+  await barByValue($, 'categoryBreakdown', '采购').fire('click', {});
+  assert.equal(renderedRows($), 1);
+  await $('resetBtn').fire('click', {});
+  assert.equal(renderedRows($), 3, '重置后回到全部');
+  assert.equal($('categoryToggle').textContent, '全部类别');
+  assert.equal($('activeFilters').hidden, true);
+});
+
+test('多选面板可开可收，Esc 收起，同时只开一个', async () => {
+  const page = await bootLedgerPage({ entries: FIXTURE });
+  const { $, doc } = page;
+  assert.equal($('categoryPanel').hidden, true, '默认收起');
+  await $('categoryToggle').fire('click', {});
+  assert.equal($('categoryPanel').hidden, false);
+  assert.equal($('categoryToggle').getAttribute('aria-expanded'), 'true');
+
+  await $('projectToggle').fire('click', {});
+  assert.equal($('projectPanel').hidden, false);
+  assert.equal($('categoryPanel').hidden, true, '同时只开一个面板');
+
+  await doc.fire('keydown', { key: 'Escape' });
+  assert.equal($('projectPanel').hidden, true, 'Esc 收起');
+
+  // 全选 / 清空
+  await $('projectToggle').fire('click', {});
+  await $('projectAll').fire('click', {});
+  assert.equal(renderedRows($), 3, '全选 = 不筛');
+  await $('projectNone').fire('click', {});
+  assert.equal(renderedRows($), 3);
+  assert.equal($('projectToggle').textContent, '全部项目');
+});
+
+test('页面标记：筛选区是多选控件而不是单选 select', () => {
+  assert.match(LEDGER_HTML, /id="projectOptions"/, '项目应为多选列表');
+  assert.match(LEDGER_HTML, /id="categoryOptions"/, '类别应为多选列表');
+  assert.match(LEDGER_HTML, /id="activeFilters"/, '应有已选条件条');
+  assert.ok(!/id="project"/.test(LEDGER_HTML), '旧的项目单选 select 应已移除');
+  assert.ok(!/id="category"/.test(LEDGER_HTML), '旧的类别单选 select 应已移除');
+});
