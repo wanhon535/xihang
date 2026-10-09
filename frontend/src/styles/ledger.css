@@ -47,6 +47,24 @@
 .ledger-page #entryProjectCustom[hidden]{display:none}
 .ledger-page #projectFieldHint{margin-top:6px;font-weight:400;color:#8ba7bf;overflow-wrap:anywhere}
 .ledger-page #attachmentHint{font-weight:400;color:#65768b;overflow-wrap:anywhere}
+/* 凭证：点击选择 / 拖拽 / Ctrl+V 粘贴截图。虚拟文件系统里没有真实文件时也能用。 */
+.ledger-attach-field{display:flex;flex-direction:column;gap:6px}
+.ledger-attach-field .ledger-attach-label{color:#41556b;font-size:12px;font-weight:600}
+.ledger-page .ledger-attach{display:flex;align-items:center;justify-content:center;min-height:96px;padding:14px;box-sizing:border-box;border:1.5px dashed #c3d4e2;border-radius:10px;background:#fafcfd;cursor:pointer;transition:border-color .15s ease,background .15s ease}
+.ledger-page .ledger-attach:hover{border-color:#7fc2d4;background:#f1f8fb}
+.ledger-page .ledger-attach:focus-visible{outline:2px solid #0e7490;outline-offset:2px;border-color:#7fc2d4}
+.ledger-page .ledger-attach.ledger-attach-active{border-color:#0e7490;background:#e9f5f9}
+.ledger-attach-idle{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;color:#65768b;font-size:13px;font-weight:400;text-align:center}
+.ledger-attach-idle .ledger-attach-icon{font-size:18px}
+.ledger-attach-idle kbd{padding:1px 6px;border:1px solid #cfdae5;border-bottom-width:2px;border-radius:5px;background:#fff;color:#43596f;font-size:12px;font-family:inherit}
+.ledger-attach-preview{display:flex;align-items:center;gap:14px;width:100%;min-width:0}
+.ledger-attach-preview img{width:80px;height:80px;flex:0 0 auto;object-fit:cover;border:1px solid #d8e1eb;border-radius:8px;background:#fff}
+.ledger-attach-meta{display:flex;flex-direction:column;gap:4px;min-width:0}
+.ledger-attach-meta strong{color:#1f3a52;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.ledger-attach-meta span{color:#718095;font-size:12px}
+.ledger-attach-bar{display:flex;align-items:center;gap:16px}
+.ledger-page .ledger-attach-bar .ledger-link{max-width:none;min-height:0;padding:0;border:0;background:transparent}
+.ledger-page .ledger-attach-idle[hidden],.ledger-page .ledger-attach-preview[hidden],.ledger-page .ledger-attach-bar button[hidden]{display:none}
 .ledger-dialog-actions{display:flex;justify-content:flex-end;gap:10px;padding-top:16px;border-top:1px solid #e3e9f0}
 .ledger-page #formStatus{min-height:22px;overflow-wrap:anywhere}
 @media(max-width:1100px){.ledger-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.ledger-stats article{padding:18px}}

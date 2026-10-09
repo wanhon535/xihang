@@ -256,11 +256,107 @@ function openEditor(entry = null) {
     form.elements.namedItem('handler').value = user.nick || user.username || '';
   }
   $('dialogTitle').textContent = entry ? '编辑成本' : '新增成本';
-  $('attachmentHint').textContent = entry?.attachmentId ? `当前凭证：${entry.attachmentName}。不选择文件将保留原凭证；选择新文件将替换。` : '可选；仅支持 PDF / PNG / JPEG，最大 3 MiB。';
+  clearAttachment();
   $('formStatus').textContent = '';
   $('saveBtn').disabled = false;
   dialog.showModal();
   form.elements.namedItem('date').focus();
+}
+// ---------- 凭证：文件选择 / 拖拽 / 剪贴板粘贴（Ctrl+V 贴截图） ----------
+const ATTACHMENT_LIMIT = 3 * 1024 * 1024;
+// 当前待上传的凭证，来源可能是文件选择、拖拽或粘贴；null 表示本次不修改凭证。
+let selectedAttachment = null;
+let attachmentPreviewUrl = '';
+const attachmentZone = $('attachmentZone');
+const attachmentInput = $('entryAttachment');
+const attachmentIdle = $('attachmentIdle');
+const attachmentPreview = $('attachmentPreview');
+const attachmentPreviewImg = $('attachmentPreviewImg');
+const attachmentClearBtn = $('attachmentClearBtn');
+function timestamp() {
+  const now = new Date();
+  const pad = value => String(value).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+function formatBytes(size) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(2)} MB`;
+}
+// 部分老浏览器没有 File 构造器，退化成带 name 的 Blob。
+function namedFile(blob, name, type) {
+  try { return new File([blob], name, { type }); } catch {
+    const copy = blob.slice(0, blob.size, type);
+    Object.defineProperty(copy, 'name', { value: name });
+    return copy;
+  }
+}
+// 按魔数识别真实格式，返回 'png' | 'jpg' | 'pdf'，不认识返回 ''。
+async function sniffFormat(file) {
+  const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  const starts = signature => signature.every((byte, index) => head[index] === byte);
+  if (starts([137, 80, 78, 71, 13, 10, 26, 10])) return 'png';
+  if (starts([255, 216, 255])) return 'jpg';
+  if (starts([37, 80, 68, 70, 45])) return 'pdf';
+  return '';
+}
+function attachmentHintText() {
+  if (selectedAttachment) {
+    const replacing = editing && editing.attachmentId ? '保存后将替换原凭证' : '保存后随记录一并提交';
+    return `待上传凭证：${selectedAttachment.name}（${formatBytes(selectedAttachment.size)}），${replacing}。`;
+  }
+  if (editing && editing.attachmentId) return `当前凭证：${editing.attachmentName}。不选择文件将保留原凭证；粘贴截图或选择新文件将替换。`;
+  return '可选；仅支持 PDF / PNG / JPEG，最大 3 MiB。可直接 Ctrl / ⌘ + V 粘贴截图。';
+}
+function refreshAttachmentView() {
+  const ready = Boolean(selectedAttachment);
+  attachmentIdle.hidden = ready;
+  attachmentPreview.hidden = !ready;
+  attachmentClearBtn.hidden = !ready;
+  if (attachmentPreviewUrl) { URL.revokeObjectURL(attachmentPreviewUrl); attachmentPreviewUrl = ''; }
+  attachmentPreviewImg.removeAttribute('src');
+  attachmentPreviewImg.hidden = true;
+  if (ready) {
+    $('attachmentName').textContent = selectedAttachment.name;
+    $('attachmentSize').textContent = formatBytes(selectedAttachment.size);
+    if (/^image\//i.test(selectedAttachment.type)) {
+      attachmentPreviewUrl = URL.createObjectURL(selectedAttachment);
+      attachmentPreviewImg.src = attachmentPreviewUrl;
+      attachmentPreviewImg.hidden = false;
+    }
+  }
+  $('attachmentHint').textContent = attachmentHintText();
+}
+function clearAttachment() {
+  selectedAttachment = null;
+  attachmentInput.value = '';
+  refreshAttachmentView();
+}
+// 校验 → 按实际内容统一命名 → 预览。renameByContent 用于粘贴/拖拽（文件名不可信，常为 image.png）。
+async function acceptAttachment(file, renameByContent) {
+  try {
+    if (!file || !file.size) throw new Error('凭证不能为空。');
+    if (file.size > ATTACHMENT_LIMIT) throw new Error('凭证不能超过 3 MiB。');
+    const ext = await sniffFormat(file);
+    if (!ext) throw new Error('仅接受 PDF / PNG / JPEG，当前内容不是这三种格式。');
+    const expected = ext === 'jpg' ? /\.jpe?g$/i : new RegExp(`\\.${ext}$`, 'i');
+    selectedAttachment = (renameByContent || !expected.test(String(file.name || '')))
+      ? namedFile(file, `凭证-${timestamp()}.${ext}`, ext === 'pdf' ? 'application/pdf' : ext === 'jpg' ? 'image/jpeg' : 'image/png')
+      : file;
+    refreshAttachmentView();
+    $('formStatus').textContent = '';
+    return true;
+  } catch (error) {
+    $('formStatus').textContent = `凭证未能载入：${error.message}`;
+    return false;
+  }
+}
+// 从粘贴/拖拽数据里挑第一个受支持的凭证文件。
+function pickClipboardFile(data) {
+  const direct = [...(data.files || [])];
+  const items = [...(data.items || [])].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean);
+  const all = direct.length ? direct : items;
+  return { all, usable: all.find(candidate => /^(image\/(png|jpe?g)|application\/pdf)$/i.test(candidate.type || '')) };
 }
 async function encodeAttachment(file) {
   if (!file.size || file.size > 3 * 1024 * 1024) throw new Error('凭证不能为空且不能超过 3 MiB。');
@@ -288,7 +384,7 @@ async function saveEntry(event) {
     return;
   }
   if (editing) payload.version = editing.version;
-  const file = form.elements.namedItem('attachment').files[0];
+  const file = selectedAttachment;
   saving = true;
   $('saveBtn').disabled = true;
   $('cancelBtn').disabled = true;
@@ -360,6 +456,48 @@ dialog.addEventListener('cancel', event => {
   closeDialogAnimated(dialog);
 });
 form.addEventListener('submit', saveEntry);
+// 凭证录入：点击 / 按钮选文件、拖拽、以及 Ctrl+V 直接粘贴截图（微信、钉钉、截图工具均可）。
+$('attachmentPickBtn').addEventListener('click', () => { if (!saving) attachmentInput.click(); });
+attachmentZone.addEventListener('click', event => {
+  if (saving || event.target === attachmentInput) return;
+  attachmentInput.click();
+});
+attachmentZone.addEventListener('keydown', event => {
+  if (saving) return;
+  if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); attachmentInput.click(); }
+});
+attachmentClearBtn.addEventListener('click', () => { if (!saving) clearAttachment(); });
+attachmentInput.addEventListener('change', async () => {
+  const picked = attachmentInput.files && attachmentInput.files[0];
+  if (picked) await acceptAttachment(picked, false);
+  else if (!selectedAttachment) clearAttachment();
+});
+attachmentZone.addEventListener('dragover', event => {
+  if (saving) return;
+  event.preventDefault();
+  attachmentZone.classList.add('ledger-attach-active');
+});
+attachmentZone.addEventListener('dragleave', () => attachmentZone.classList.remove('ledger-attach-active'));
+attachmentZone.addEventListener('drop', async event => {
+  attachmentZone.classList.remove('ledger-attach-active');
+  if (saving) return;
+  event.preventDefault();
+  const dropped = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+  if (dropped) await acceptAttachment(dropped, true);
+});
+// 仅在弹窗打开时接管粘贴，且只在剪贴板里确实有凭证图片/PDF 时才 preventDefault：
+// 往「说明」「备注」里粘贴纯文本、从 Excel 粘贴表格都不受影响。
+document.addEventListener('paste', async event => {
+  if (!dialog.open || saving || !event.clipboardData) return;
+  const { all, usable } = pickClipboardFile(event.clipboardData);
+  if (!all.length) return;
+  event.preventDefault();
+  if (!usable) {
+    $('formStatus').textContent = '剪贴板里的图片不是受支持的凭证格式，请粘贴 PNG / JPEG 截图，或改用「选择文件」上传 PDF。';
+    return;
+  }
+  await acceptAttachment(usable, true);
+});
 $('logoutBtn').addEventListener('click', async () => {
   try { await logout(); } catch (error) { if (!handleAuth(error)) status(`退出失败：${error.message}`, true); }
 });
