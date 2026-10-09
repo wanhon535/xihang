@@ -68,6 +68,8 @@ const makeElement = (tag, doc) => {
     getAttribute(name) { return Object.prototype.hasOwnProperty.call(this._attributes, name) ? this._attributes[name] : null; },
     removeAttribute(name) { delete this._attributes[name]; if (name === 'src') this.src = ''; },
     reportValidity() { return true; },
+    showModal() { this.open = true; },
+    close() { this.open = false; },
     reset() { if (this._fields) this._fields.forEach(field => { field._value = ''; }); }
   };
   element.classList = makeClassList();
@@ -111,9 +113,11 @@ const hiddenIdsInMarkup = () => {
   return ids;
 };
 
-const bootLedgerPage = async () => {
+const bootLedgerPage = async (fixture = {}) => {
   const doc = makeDocument();
   const calls = [];
+  const stats = { fetchCalls: 0 };
+  const entriesFixture = fixture.entries || [];
 
   for (const id of hiddenIdsInMarkup()) doc.getElementById(id).hidden = true;
 
@@ -133,7 +137,7 @@ const bootLedgerPage = async () => {
     calls.push({ path, options });
     if (path === '/api/admin/projects') return { ok: true, projects: [{ id: '1', name: '服务器采购' }] };
     if (path === '/api/admin/costs' && (options.method || 'GET') === 'GET') {
-      return { ok: true, entries: [], summary: { totalCents: '0', monthCents: '0', unpaidCents: '0' }, month: '2026-10' };
+      return { ok: true, entries: entriesFixture, summary: { totalCents: '0', monthCents: '0', unpaidCents: '0' }, month: '2026-10' };
     }
     if (path === '/api/admin/costs' && options.method === 'POST') return { ok: true, entry: { id: '9' } };
     return { ok: true };
@@ -152,6 +156,16 @@ const bootLedgerPage = async () => {
     URL: {
       createObjectURL: () => `blob:mock/${++objectUrlSeq}`,
       revokeObjectURL: () => {}
+    },
+    // 凭证缩略图走的是裸 fetch（不是 api() 封装），这里给个能返回图片的假响应。
+    fetch: async () => {
+      stats.fetchCalls += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+        blob: async () => new Blob([new Uint8Array([...PNG_HEAD, 1, 2, 3, 4])], { type: 'image/png' })
+      };
     },
     window: { location: { href: '', pathname: '/ledger.html', origin: 'http://localhost' } },
     // 真实纯函数；其余是可控 stub。
@@ -174,11 +188,23 @@ const bootLedgerPage = async () => {
     fill(custom = {}) {
       const values = { date: '2026-10-09', category: '云服务器', amount: '1200.50', paymentStatus: 'unpaid', handler: '万釔宏', description: '月度续费', notes: '', project: '', ...custom };
       for (const [key, value] of Object.entries(values)) form.elements.namedItem(key).value = value;
+      // 项目和类别现在都是三段式下拉，保存时以 select 的值为准，所以两边都要设上
       doc.getElementById('entryProjectSelect').value = custom.project || '服务器采购';
+      doc.getElementById('entryCategorySelect').value = custom.category || '云服务器';
     }
   };
 
-  return { doc, form, calls, $: id => doc.getElementById(id), fieldSetters };
+  return { doc, form, calls, stats, $: id => doc.getElementById(id), fieldSetters };
+};
+
+// 在 stub 树里按 className 找元素
+const findByClass = (root, className) => {
+  for (const child of root.children || []) {
+    if (typeof child.className === 'string' && child.className.split(/\s+/).includes(className)) return child;
+    const hit = findByClass(child, className);
+    if (hit) return hit;
+  }
+  return null;
 };
 
 // ---------------- 事件构造 ----------------
@@ -354,6 +380,7 @@ test('粘贴的凭证会真正进入保存 payload（base64 内容与粘贴内�
   assert.ok(body.attachment, 'payload 应带上凭证');
   assert.equal(body.attachment.name, expectedName, '凭证名应与预览一致');
   assert.equal(body.project, '服务器采购', '项目应来自下拉');
+  assert.equal(body.category, '云服务器', '类别应来自下拉');
 
   const decoded = Buffer.from(body.attachment.data, 'base64');
   assert.deepEqual([...decoded.subarray(0, 8)], PNG_HEAD, 'base64 解码后应是原始 PNG 字节');
@@ -384,4 +411,108 @@ test('构建产物已带上粘贴导入（dist 与源码一致）', () => {
   assert.match(code, /clipboardData/, '构建产物应包含剪贴板处理逻辑');
   assert.match(code, /不是受支持的凭证格式/, '构建产物应包含格式错误提示');
   assert.match(code, /粘贴截图/, '构建产物应包含粘贴提示文案');
+});
+
+// ---------------- 本轮新增：类别下拉 / 凭证出图 / 项目维度展示 ----------------
+
+const FIXTURE = [
+  { id: '1', date: '2026-04-09', project: '美国C类公司成本', category: '跨境电商', amountCents: '180000', paymentStatus: 'paid', handler: '2R.T5z', description: '', notes: '' },
+  { id: '2', date: '2026-05-04', project: '1060U', category: '跨境电商', amountCents: '726100', paymentStatus: 'paid', handler: '尹亿祥', description: '', notes: '' },
+  { id: '3', date: '2026-04-28', project: '服务器', category: '采购', amountCents: '6000', paymentStatus: 'paid', handler: '万釔宏', description: '', notes: '' }
+];
+
+test('新增成本时「类别」下拉把台账里已有的类别全带出来', async () => {
+  const page = await bootLedgerPage({ entries: FIXTURE });
+  const { $, doc } = page;
+
+  // 走真实路径：点「＋新增成本」→ 刷新项目 → openEditor
+  await $('newBtn').fire('click', {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(doc.getElementById('editDialog').open, true, '应打开新增弹窗');
+  const options = $('entryCategorySelect').children.map(option => option.textContent);
+  for (const expected of ['跨境电商', '采购']) {
+    assert.ok(options.includes(expected), `类别下拉应含「${expected}」，实际：${options.join(' / ')}`);
+  }
+  assert.ok(options.some(text => /其他（手填类别）/.test(text)), '应保留手填兜底项');
+  assert.match($('categoryFieldHint').textContent, /2 个类别/, '提示应说明带出了几个类别');
+});
+
+test('新增成本时选择「其他」才露出类别手填框', async () => {
+  const page = await bootLedgerPage({ entries: FIXTURE });
+  const { $ } = page;
+  await $('newBtn').fire('click', {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal($('entryCategoryCustom').hidden, true, '默认不显示手填框');
+  $('entryCategorySelect').value = '__custom__';
+  await $('entryCategorySelect').fire('change', {});
+  assert.equal($('entryCategoryCustom').hidden, false, '选「其他」后应露出手填框');
+  assert.equal($('entryCategoryCustom').required, true, '手填时必填');
+});
+
+test('凭证列直接渲染缩略图，点开看大图（且同一张只请求一次）', async () => {
+  const entries = [{ ...FIXTURE[0], attachmentId: '11', attachmentName: '凭证-2026-04-09-6.png' }];
+  const page = await bootLedgerPage({ entries });
+  const { $, stats } = page;
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  const cell = findByClass($('rows'), 'ledger-voucher');
+  assert.ok(cell, '凭证单元格应渲染成 .ledger-voucher');
+  const thumb = findByClass(cell, 'ledger-voucher-thumb');
+  assert.ok(thumb, '应有缩略图按钮');
+  await new Promise(resolve => setTimeout(resolve, 0)); // 等 paintThumb
+
+  const image = thumb.children[0];
+  assert.equal(image.tagName, 'IMG', `缩略图应真的渲染出 <img>，实际：${thumb.textContent}`);
+  assert.match(image.src, /^blob:/, '缩略图应指向 blob URL');
+  assert.match(thumb.getAttribute('aria-label'), /查看凭证/, '缩略图应有可访问名称');
+  assert.equal(stats.fetchCalls, 1, '应恰好为这张凭证请求一次');
+
+  await thumb.fire('click', {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal($('voucherDialog').open, true, '点击缩略图应打开大图弹窗');
+  assert.match($('voucherImage').src, /^blob:/, '大图应显示凭证');
+  assert.equal($('voucherImage').hidden, false);
+  assert.match($('voucherMeta').textContent, /美国C类公司成本/);
+  assert.equal(stats.fetchCalls, 1, '大图应复用缩略图已缓存的 blob，不重复请求');
+
+  await $('voucherCloseBtn').fire('click', {});
+});
+
+test('PDF 凭证不硬塞 <img>，提示去下载', async () => {
+  const entries = [{ ...FIXTURE[0], attachmentId: '12', attachmentName: '发票.pdf' }];
+  const page = await bootLedgerPage({ entries });
+  const { $ } = page;
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  const thumb = findByClass($('rows'), 'ledger-voucher-thumb');
+  assert.equal(thumb.textContent, 'PDF', 'PDF 缩略图应显示格式标记而不是图片');
+  await thumb.fire('click', {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match($('voucherMeta').textContent, /PDF 无法直接预览/);
+  assert.equal($('voucherImage').hidden, true, 'PDF 不应显示 <img>');
+});
+
+test('概览区「类别」和「项目」两个维度口径一致（含笔数）', async () => {
+  const page = await bootLedgerPage({ entries: FIXTURE });
+  const { $ } = page;
+
+  const projectBars = $('projectBreakdown').children;
+  assert.equal(projectBars.length, 3, '三个项目应各占一行');
+  assert.match(projectBars[0].children[0].textContent, /1060U/, '项目应按金额降序，1060U 最大');
+  assert.equal(projectBars[0].children[2].textContent, '1 笔', '项目条应显示笔数');
+
+  const categoryBars = $('categoryBreakdown').children;
+  assert.equal(categoryBars.length, 2, '两个类别');
+  assert.match(categoryBars[0].children[0].textContent, /跨境电商/, '跨境电商金额最大');
+  assert.equal(categoryBars[0].children[2].textContent, '2 笔', '类别条也应显示笔数');
+});
+
+test('页面标记：类别是下拉、有项目分布面板与凭证大图弹窗', () => {
+  assert.match(LEDGER_HTML, /id="entryCategorySelect"/, '类别应改为下拉');
+  assert.match(LEDGER_HTML, /id="entryCategoryCustom"[^>]*hidden/, '应保留手填兜底且默认隐藏');
+  assert.match(LEDGER_HTML, /id="projectBreakdown"/, '应有项目分布面板');
+  assert.match(LEDGER_HTML, /id="voucherDialog"/, '应有凭证大图弹窗');
+  assert.match(LEDGER_HTML, /id="voucherImage"/);
 });

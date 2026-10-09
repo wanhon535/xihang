@@ -65,6 +65,25 @@
 .ledger-attach-bar{display:flex;align-items:center;gap:16px}
 .ledger-page .ledger-attach-bar .ledger-link{max-width:none;min-height:0;padding:0;border:0;background:transparent}
 .ledger-page .ledger-attach-idle[hidden],.ledger-page .ledger-attach-preview[hidden],.ledger-page .ledger-attach-bar button[hidden]{display:none}
+/* 类别下拉：与「项目」同款三段式（下拉 + 「其他」手填 + 提示）。 */
+.ledger-page #entryCategoryCustom{margin-top:8px}
+.ledger-page #entryCategoryCustom[hidden]{display:none}
+.ledger-page #categoryFieldHint{margin-top:6px;font-weight:400;color:#8ba7bf;overflow-wrap:anywhere}
+/* 凭证列：直接出图，点开看大图。 */
+.ledger-voucher{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.ledger-voucher-thumb{width:84px;height:84px;padding:0;min-height:0;border:1px solid #d8e1eb;border-radius:8px;background:#f5f8fb;cursor:zoom-in;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.ledger-voucher-thumb:hover{border-color:#7fc2d4;background:#eef7fa}
+.ledger-voucher-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.ledger-voucher-thumb.is-loading::after{content:'加载中…';color:#8ba7bf;font-size:11px}
+.ledger-voucher-thumb.is-pending{color:#8ba7bf;font-size:11px;cursor:pointer}
+.ledger-voucher-name{color:#718095;font-size:11px;max-width:150px;overflow-wrap:anywhere}
+.ledger-page .ledger-voucher-action{cursor:pointer}
+/* 凭证大图弹窗 */
+.voucher-viewer{display:flex;flex-direction:column;gap:12px}
+.voucher-viewer h2{margin:0;font-size:18px}
+.voucher-viewer img{width:100%;max-height:64vh;object-fit:contain;border:1px solid #d8e1eb;border-radius:10px;background:#f5f8fb}
+.voucher-viewer .ledger-voucher-name{max-width:none;font-size:12px}
+#voucherDialog{width:min(900px,calc(100vw - 32px))}
 .ledger-dialog-actions{display:flex;justify-content:flex-end;gap:10px;padding-top:16px;border-top:1px solid #e3e9f0}
 .ledger-page #formStatus{min-height:22px;overflow-wrap:anywhere}
 @media(max-width:1100px){.ledger-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.ledger-stats article{padding:18px}}

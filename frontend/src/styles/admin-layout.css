@@ -397,13 +397,13 @@ body.vben-shell.console-page.custom-workspace-theme {
 .vben-shell.console-page .user-row>.row-actions {display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
 .vben-shell.console-page .user-flags {display:flex;flex-direction:column;align-items:start;gap:6px}
 /* Ledger: summarize the filtered records, then expose the detailed audit table. */
-.vben-shell.console-page .ledger-insights {display:grid;grid-template-columns:minmax(220px,.8fr) minmax(0,1.2fr);gap:32px;padding:24px;border-bottom:1px solid var(--line);background:var(--surface)}
+.vben-shell.console-page .ledger-insights {display:grid;grid-template-columns:minmax(190px,.62fr) minmax(0,1fr) minmax(0,1fr);gap:26px;padding:24px;border-bottom:1px solid var(--line);background:var(--surface)}
 .vben-shell.console-page .payment-overview {display:flex;flex-direction:column;justify-content:center;gap:12px}
 .vben-shell.console-page .payment-overview>span,.vben-shell.console-page .payment-overview small {color:var(--muted);font-size:12px}
 .vben-shell.console-page .payment-overview>strong {font-size:27px;font-weight:600;font-variant-numeric:tabular-nums}
-.vben-shell.console-page .category-overview {min-width:0;border-left:1px solid var(--line);padding-left:32px}
-.vben-shell.console-page .category-overview h3 {margin:0 0 14px;font-size:13px;font-weight:500}
-.vben-shell.console-page .category-overview h3 small {color:var(--muted);font-size:11px;margin-left:10px}
+.vben-shell.console-page .category-overview,.vben-shell.console-page .project-overview {min-width:0;border-left:1px solid var(--line);padding-left:26px}
+.vben-shell.console-page .category-overview h3,.vben-shell.console-page .project-overview h3 {margin:0 0 14px;font-size:13px;font-weight:500}
+.vben-shell.console-page .category-overview h3 small,.vben-shell.console-page .project-overview h3 small {color:var(--muted);font-size:11px;margin-left:10px}
 .vben-shell.console-page .category-bar {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;margin-top:10px;font-size:12px}
 .vben-shell.console-page .category-bar span {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
 .vben-shell.console-page .category-bar strong {font-weight:500;font-variant-numeric:tabular-nums}
@@ -412,6 +412,9 @@ body.vben-shell.console-page.custom-workspace-theme {
 .vben-shell.console-page progress::-webkit-progress-value {background:var(--primary);border-radius:6px}
 .vben-shell.console-page progress::-moz-progress-bar {background:var(--primary);border-radius:6px}
 .vben-shell.console-page .category-bar progress {grid-column:1/-1;height:4px}
+/* 「项目分布」复用分类条的视觉，多一列笔数，保证两个维度展示对齐。 */
+.vben-shell.console-page .category-bar {grid-template-columns:minmax(0,1fr) auto auto}
+.vben-shell.console-page .category-bar em {font-style:normal;color:var(--muted);font-size:11px;white-space:nowrap}
 .vben-shell.console-page .insight-empty {color:var(--muted);font-size:12px;padding:20px 0}
 .vben-shell.console-page .ledger-page-title {margin-bottom:0}
 @media(max-width:1100px){.vben-shell.console-page .vault-actions-bar {grid-template-columns:1fr 1fr}.vben-shell.console-page .vault-actions-bar>button {justify-self:start}.vben-shell.console-page .vault-actions-bar .key-filters {grid-column:1/-1}}
@@ -421,8 +424,8 @@ body.vben-shell.console-page.custom-workspace-theme {
  .vben-shell.console-page .vault-actions-bar {grid-template-columns:1fr;gap:14px}
  .vben-shell.console-page .member-filterbar {flex-wrap:wrap;gap:12px;padding:16px}.vben-shell.console-page .member-filterbar label {min-width:0;flex:1}
  .vben-shell.console-page #memberResultCount {width:100%;margin:0;padding:0}
- .vben-shell.console-page .ledger-insights {grid-template-columns:1fr;padding:20px;gap:24px}
- .vben-shell.console-page .category-overview {padding:20px 0 0;border-left:0;border-top:1px solid var(--line)}
+ .vben-shell.console-page .ledger-insights {grid-template-columns:1fr;padding:20px;gap:20px}
+ .vben-shell.console-page .category-overview,.vben-shell.console-page .project-overview {padding:20px 0 0;border-left:0;border-top:1px solid var(--line)}
  .vben-shell.console-page .shell-appearance {padding:3px 6px;font-size:11px}
 }
 /* Consistent Vben-style content frames, with room for a personal background. */

@@ -52,6 +52,95 @@ function sorted(list) {
   });
 }
 function paymentLabel(value) { return value === 'paid' ? '已付款' : '待付款'; }
+// ---------- 凭证展示：列表里直接出图（不再只是一个下载按钮），点开看大图 ----------
+// 附件接口带 Content-Disposition: attachment，直接塞进 <img src> 不可靠，
+// 所以统一 fetch 成 blob 再用 object URL 渲染，顺便保住原来的下载/鉴权逻辑。
+const voucherUrls = new Map();     // attachmentId -> blob URL
+const voucherEntries = new Map();  // attachmentId -> entry
+let voucherEntry = null;
+function isImageVoucher(entry) { return /\.(png|jpe?g)$/i.test(entry.attachmentName || ''); }
+async function fetchVoucherUrl(entry) {
+  const cached = voucherUrls.get(entry.attachmentId);
+  if (cached) return cached;
+  const response = await fetch(`${API_BASE_URL}${endpoint}/attachments/${encodeURIComponent(entry.attachmentId)}`, { credentials: 'include', cache: 'no-store' });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw Object.assign(new Error(payload.message || '凭证加载失败'), { status: response.status, code: payload.code });
+  }
+  const url = URL.createObjectURL(await response.blob());
+  voucherUrls.set(entry.attachmentId, url);
+  return url;
+}
+async function paintThumb(button) {
+  const entry = voucherEntries.get(button.dataset.attachmentId);
+  if (!entry) return;
+  try {
+    const url = await fetchVoucherUrl(entry);
+    const image = node('img');
+    image.src = url;
+    image.alt = `凭证：${entry.project || entry.date}`;
+    image.loading = 'lazy';
+    button.classList.remove('is-loading');
+    button.replaceChildren(image);
+  } catch (error) {
+    button.classList.remove('is-loading');
+    button.textContent = '加载失败';
+    if (!handleAuth(error)) status(`凭证加载失败：${error.message}`, true);
+  }
+}
+// 84 张凭证一次性全拉会打爆流量，所以滚到可视区域才加载缩略图。
+const thumbObserver = ('IntersectionObserver' in window && document.querySelector('.ledger-table-scroll'))
+  ? new IntersectionObserver(records => {
+      for (const record of records) {
+        if (!record.isIntersecting) continue;
+        thumbObserver.unobserve(record.target);
+        paintThumb(record.target);
+      }
+    }, { root: document.querySelector('.ledger-table-scroll'), rootMargin: '240px' })
+  : null;
+function voucherCell(entry) {
+  const wrap = node('div', undefined, 'ledger-voucher');
+  if (!entry.attachmentId) { wrap.textContent = '—'; return wrap; }
+  voucherEntries.set(entry.attachmentId, entry);
+  const button = node('button', undefined, 'ledger-voucher-thumb');
+  button.type = 'button';
+  button.dataset.attachmentId = entry.attachmentId;
+  button.setAttribute('aria-label', `查看凭证：${entry.attachmentName || entry.project || entry.date}`);
+  button.addEventListener('click', () => openVoucher(entry));
+  if (isImageVoucher(entry)) {
+    button.classList.add('is-loading');
+    if (thumbObserver) thumbObserver.observe(button);
+    else paintThumb(button);
+  } else {
+    button.classList.add('is-pending');
+    button.textContent = 'PDF';
+  }
+  wrap.append(button, node('span', entry.attachmentName || '凭证', 'ledger-voucher-name'));
+  return wrap;
+}
+async function openVoucher(entry) {
+  if (!user) return;
+  voucherEntry = entry;
+  const viewer = $('voucherDialog');
+  const image = $('voucherImage');
+  $('voucherTitle').textContent = isImageVoucher(entry) ? '凭证' : 'PDF 凭证';
+  $('voucherMeta').textContent = `${entry.date} · ${entry.project || '—'} · ¥${money(entry.amountCents)} · ${entry.attachmentName || ''}`;
+  image.removeAttribute('src');
+  image.hidden = true;
+  viewer.showModal();
+  if (!isImageVoucher(entry)) {
+    $('voucherMeta').textContent += '（PDF 无法直接预览，请点「下载凭证」查看）';
+    return;
+  }
+  try {
+    image.src = await fetchVoucherUrl(entry);
+    image.alt = `凭证：${entry.project || entry.date}`;
+    image.hidden = false;
+  } catch (error) {
+    if (handleAuth(error)) return;
+    $('voucherMeta').textContent = `凭证加载失败：${error.message}`;
+  }
+}
 function entryRow(entry) {
   const row = node('tr');
   for (const key of ['date', 'project', 'category', 'description']) row.append(node('td', entry[key] || '—'));
@@ -60,12 +149,7 @@ function entryRow(entry) {
   payment.append(node('span', paymentLabel(entry.paymentStatus), `ledger-badge ledger-${entry.paymentStatus === 'paid' ? 'paid' : 'unpaid'}`));
   row.append(payment, node('td', entry.handler), node('td', entry.notes || '—'));
   const attachment = node('td');
-  if (entry.attachmentId) {
-    const button = node('button', entry.attachmentName || '下载凭证', 'ledger-link');
-    button.type = 'button';
-    button.addEventListener('click', () => downloadAttachment(entry, button));
-    attachment.append(button);
-  } else attachment.textContent = '—';
+  attachment.append(voucherCell(entry));
   row.append(attachment);
   for (const prefix of ['created', 'updated']) {
     const cell = node('td', entry[`${prefix}ByName`] || entry[`${prefix}By`] || '—');
@@ -91,18 +175,32 @@ function renderInsights(visible) {
   $('paymentProgress').value = percent;
   $('paymentProgressLabel').textContent = visible.length ? `${percent}% 已付款` : '暂无支出记录';
   $('paymentProgressHint').textContent = visible.length ? `已付 ¥${money(paid)} · 待付 ¥${money(total - paid)}` : '新增成本或调整筛选条件，查看付款进度。';
-  const amounts = new Map();
-  visible.forEach(entry => amounts.set(entry.category, (amounts.get(entry.category) || 0n) + BigInt(entry.amountCents)));
-  const ranked = [...amounts].sort((a, b) => compare(b[1], a[1])).slice(0, 5);
-  const list = $('categoryBreakdown'); list.replaceChildren();
-  if (!ranked.length) { list.append(node('p', '尚无分类支出，新增记录后将自动汇总。', 'insight-empty')); return; }
+  renderBreakdown('categoryBreakdown', visible, 'category', '尚无分类支出，新增记录后将自动汇总。');
+  renderBreakdown('projectBreakdown', visible, 'project', '尚无项目支出，新增记录后将自动汇总。');
+}
+// 「支出分类」和「项目分布」共用一个渲染器，两个维度口径完全一致。
+function renderBreakdown(targetId, visible, key, emptyText) {
+  const totals = new Map();
+  const counts = new Map();
+  for (const entry of visible) {
+    const name = entry[key] || '未填写';
+    totals.set(name, (totals.get(name) || 0n) + BigInt(entry.amountCents));
+    counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  const total = totalCents(visible);
+  const ranked = [...totals].sort((a, b) => compare(b[1], a[1])).slice(0, 5);
+  const list = $(targetId);
+  list.replaceChildren();
+  if (!ranked.length) { list.append(node('p', emptyText, 'insight-empty')); return; }
   for (const [name, amount] of ranked) {
     const row = node('div', undefined, 'category-bar');
-    row.append(node('span', name), node('strong', `¥${money(amount)}`));
-    const progress = node('progress'); progress.max = 100;
+    row.append(node('span', name), node('strong', `¥${money(amount)}`), node('em', `${counts.get(name)} 笔`));
+    const progress = node('progress');
+    progress.max = 100;
     progress.value = total > 0n ? Number(amount * 1000n / total) / 10 : 0;
     progress.setAttribute('aria-label', `${name}占支出${progress.value}%`);
-    row.append(progress); list.append(row);
+    row.append(progress);
+    list.append(row);
   }
 }
 function render() {
@@ -167,6 +265,8 @@ function refreshOptions() {
     }
     select.value = previous;
   }
+  // 新增/编辑弹窗的类别下拉与此同源，避免「下面的筛选有、上面录入时反而没有」。
+  categoryRegistry = [...new Set(entries.map(entry => entry.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
 }
 async function loadEntries() {
   if (!user || loading) return false;
@@ -240,6 +340,51 @@ function fillEntryProjectOptions(projects, selected = '') {
   }
   syncCustomProjectVisibility();
 }
+// 类别字段同样改成三段式（下拉 +「其他」手填 + 提示）。
+// 原来只是自由文本挂 datalist，跟项目字段当初一样「点开什么都看不见」，所以统一成下拉，
+// 选项来自台账里已出现过的全部类别（和下方筛选栏的类别下拉同源，保证两边一致）。
+const CUSTOM_CATEGORY = '__custom__';
+let categoryRegistry = [];
+function currentCategoryValue() {
+  const select = $('entryCategorySelect');
+  if (select.value === CUSTOM_CATEGORY) return $('entryCategoryCustom').value;
+  return select.value;
+}
+function syncCustomCategoryVisibility() {
+  const custom = $('entryCategorySelect').value === CUSTOM_CATEGORY;
+  const input = $('entryCategoryCustom');
+  input.hidden = !custom;
+  input.required = custom;
+  if (!custom) input.value = '';
+}
+function fillEntryCategoryOptions(selected = '') {
+  const select = $('entryCategorySelect');
+  const names = [...categoryRegistry];
+  if (selected && !names.includes(selected)) names.push(selected);
+  names.sort((a, b) => a.localeCompare(b, 'zh-CN'));
+  const placeholder = node('option', names.length ? '请选择类别' : '暂无类别，请选「其他」手填');
+  placeholder.value = '';
+  placeholder.disabled = true;
+  select.replaceChildren(placeholder);
+  for (const name of names) {
+    const option = node('option', name);
+    option.value = name;
+    select.append(option);
+  }
+  const custom = node('option', '其他（手填类别）');
+  custom.value = CUSTOM_CATEGORY;
+  select.append(custom);
+  if (selected && names.includes(selected)) {
+    select.value = selected;
+  } else {
+    select.value = selected ? CUSTOM_CATEGORY : '';
+    if (selected) $('entryCategoryCustom').value = selected;
+  }
+  syncCustomCategoryVisibility();
+  $('categoryFieldHint').textContent = categoryRegistry.length
+    ? `已带出台账里的 ${categoryRegistry.length} 个类别：${categoryRegistry.slice(0, 8).join('、')}${categoryRegistry.length > 8 ? ' 等' : ''}。`
+    : '台账里还没有类别，可先选「其他（手填类别）」。';
+}
 function openEditor(entry = null) {
   if (!user || saving) return;
   editing = entry;
@@ -250,6 +395,7 @@ function openEditor(entry = null) {
     form.elements.namedItem(field).value = entry ? (field === 'amount' ? money(entry.amountCents) : entry[field] || '') : '';
   }
   fillEntryProjectOptions(projectRegistry, entry ? entry.project || '' : '');
+  fillEntryCategoryOptions(entry ? entry.category || '' : '');
   if (!entry) {
     form.elements.namedItem('date').value = localDate();
     form.elements.namedItem('paymentStatus').value = 'unpaid';
@@ -375,6 +521,7 @@ async function saveEntry(event) {
   if (!user || saving || conflicted || !form.reportValidity()) return;
   const payload = Object.fromEntries(fields.map(field => [field, form.elements.namedItem(field).value]));
   payload.project = currentProjectValue().trim();
+  payload.category = currentCategoryValue().trim();
   if (!/^(0|[1-9]\d{0,8})(\.\d{1,2})?$/.test(payload.amount) || /^0(?:\.0{1,2})?$/.test(payload.amount)) {
     $('formStatus').textContent = '金额须大于零、最多两位小数，且不超过 999999999.99。';
     return;
@@ -448,6 +595,7 @@ $('newBtn').addEventListener('click', async () => {
   openEditor();
 });
 $('entryProjectSelect').addEventListener('change', syncCustomProjectVisibility);
+$('entryCategorySelect').addEventListener('change', syncCustomCategoryVisibility);
 $('refreshBtn').addEventListener('click', loadEntries);
 $('cancelBtn').addEventListener('click', () => { if (!saving) closeDialogAnimated(dialog); });
 dialog.addEventListener('cancel', event => {
@@ -455,6 +603,10 @@ dialog.addEventListener('cancel', event => {
   event.preventDefault();
   closeDialogAnimated(dialog);
 });
+// 凭证大图弹窗
+$('voucherCloseBtn').addEventListener('click', () => closeDialogAnimated($('voucherDialog')));
+$('voucherDownloadBtn').addEventListener('click', event => { if (voucherEntry) downloadAttachment(voucherEntry, event.currentTarget); });
+$('voucherDialog').addEventListener('cancel', event => { event.preventDefault(); closeDialogAnimated($('voucherDialog')); });
 form.addEventListener('submit', saveEntry);
 // 凭证录入：点击 / 按钮选文件、拖拽、以及 Ctrl+V 直接粘贴截图（微信、钉钉、截图工具均可）。
 $('attachmentPickBtn').addEventListener('click', () => { if (!saving) attachmentInput.click(); });
