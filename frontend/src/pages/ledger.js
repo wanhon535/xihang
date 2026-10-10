@@ -2,6 +2,7 @@ import { setWorkspaceUser } from '../shell.js';
 import { api, logout, redirectToLogin, requireUser } from '../api.js';
 import { API_BASE_URL } from '../config.js';
 import { money, totalCents, filterEntries } from '../ledger-utils.js';
+import { shrinkImageToLimit, LOSSLESS_PLAN } from '../image-fit.js';
 import { showToast, closeDialogAnimated } from '../ui-feedback.js';
 
 const $ = id => document.getElementById(id);
@@ -548,7 +549,7 @@ function attachmentHintText() {
     return `待上传凭证：${selectedAttachment.name}（${formatBytes(selectedAttachment.size)}），${replacing}。`;
   }
   if (editing && editing.attachmentId) return `当前凭证：${editing.attachmentName}。不选择文件将保留原凭证；粘贴截图或选择新文件将替换。`;
-  return '可选；仅支持 PDF / PNG / JPEG，最大 3 MiB。可直接 Ctrl / ⌘ + V 粘贴截图。';
+  return '可选；支持 PDF / PNG / JPEG（其他图片格式会自动转换），超过 3 MiB 会自动压缩。可直接 Ctrl / ⌘ + V 粘贴截图。';
 }
 function refreshAttachmentView() {
   const ready = Boolean(selectedAttachment);
@@ -574,31 +575,67 @@ function clearAttachment() {
   attachmentInput.value = '';
   refreshAttachmentView();
 }
-// 校验 → 按实际内容统一命名 → 预览。renameByContent 用于粘贴/拖拽（文件名不可信，常为 image.png）。
+// 校验 → 必要的压缩/格式转换 → 按实际内容统一命名 → 预览。
+// renameByContent 用于粘贴/拖拽（文件名不可信，常为 image.png）。
+//
+// 关键取舍：不再「超过 3 MiB 直接拒收」。手机照片、4K 截屏基本都在 3–6 MB，
+// 一刀切会让「保存图片」必然失败。这里改成按档位自动压到限额内。
+async function tryShrink(file, options) {
+  try { return await shrinkImageToLimit(file, ATTACHMENT_LIMIT, options); } catch { return null; }
+}
+function blobToNamedFile(blob, ext) {
+  const type = ext === 'pdf' ? 'application/pdf' : ext === 'jpg' ? 'image/jpeg' : 'image/png';
+  return namedFile(blob, `凭证-${timestamp()}.${ext}`, type);
+}
+// 返回 { file, ext, note } —— note 是给用户看的「做了什么处理」。
+async function prepareAttachment(file, detected) {
+  if (detected === 'pdf') {
+    if (file.size > ATTACHMENT_LIMIT) throw new Error('PDF 凭证不能超过 3 MiB，请先在本地压缩后再上传。');
+    return { file, ext: 'pdf', note: '' };
+  }
+  if (detected && file.size <= ATTACHMENT_LIMIT) return { file, ext: detected, note: '' };
+  const wasOversize = file.size > ATTACHMENT_LIMIT;
+  // PNG 超限：先试无损缩放（截图文字多，JPEG 会有压缩噪点），不行再转 JPEG。
+  if (detected === 'png' && wasOversize) {
+    const lossless = await tryShrink(file, { type: 'image/png', ...LOSSLESS_PLAN });
+    if (lossless && lossless.size <= ATTACHMENT_LIMIT) {
+      return { file: blobToNamedFile(lossless, 'png'), ext: 'png', note: `${formatBytes(file.size)} → ${formatBytes(lossless.size)}（无损缩放）` };
+    }
+  }
+  const shrunk = await tryShrink(file, { type: 'image/jpeg' });
+  if (!shrunk || shrunk.size > ATTACHMENT_LIMIT) {
+    // 压缩链路不可用（老浏览器/无 canvas）：保留原来那句提示，别让用户以为功能坏了。
+    throw new Error(detected ? '凭证不能超过 3 MiB。' : '仅接受 PDF / PNG / JPEG，当前图片无法在此浏览器中转换。');
+  }
+  const note = wasOversize
+    ? `${formatBytes(file.size)} → ${formatBytes(shrunk.size)}（已自动压缩）`
+    : `${formatBytes(file.size)}（已自动转为 JPEG）`;
+  return { file: blobToNamedFile(shrunk, 'jpg'), ext: 'jpg', note };
+}
 async function acceptAttachment(file, renameByContent) {
   try {
     if (!file || !file.size) throw new Error('凭证不能为空。');
-    if (file.size > ATTACHMENT_LIMIT) throw new Error('凭证不能超过 3 MiB。');
-    const ext = await sniffFormat(file);
-    if (!ext) throw new Error('仅接受 PDF / PNG / JPEG，当前内容不是这三种格式。');
-    const expected = ext === 'jpg' ? /\.jpe?g$/i : new RegExp(`\\.${ext}$`, 'i');
-    selectedAttachment = (renameByContent || !expected.test(String(file.name || '')))
-      ? namedFile(file, `凭证-${timestamp()}.${ext}`, ext === 'pdf' ? 'application/pdf' : ext === 'jpg' ? 'image/jpeg' : 'image/png')
-      : file;
+    const detected = await sniffFormat(file);
+    const prepared = await prepareAttachment(file, detected);
+    const expected = prepared.ext === 'jpg' ? /\.jpe?g$/i : new RegExp(`\\.${prepared.ext}$`, 'i');
+    const keepName = prepared.file === file && !renameByContent && expected.test(String(file.name || ''));
+    selectedAttachment = keepName ? file : blobToNamedFile(prepared.file, prepared.ext);
     refreshAttachmentView();
-    $('formStatus').textContent = '';
+    $('formStatus').textContent = prepared.note ? `凭证已就绪：${prepared.note}。` : '';
     return true;
   } catch (error) {
     $('formStatus').textContent = `凭证未能载入：${error.message}`;
     return false;
   }
 }
-// 从粘贴/拖拽数据里挑第一个受支持的凭证文件。
+// 从粘贴/拖拽数据里挑第一个可能受支持的凭证文件。
+// 图片类型（含 WebP / HEIC / GIF / BMP 等）会交给后续的自动转换处理；PDF 直接放行。
 function pickClipboardFile(data) {
   const direct = [...(data.files || [])];
   const items = [...(data.items || [])].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean);
   const all = direct.length ? direct : items;
-  return { all, usable: all.find(candidate => /^(image\/(png|jpe?g)|application\/pdf)$/i.test(candidate.type || '')) };
+  const usable = all.find(candidate => /^image\//i.test(candidate.type || '') || /^application\/pdf$/i.test(candidate.type || '') || !candidate.type);
+  return { all, usable };
 }
 async function encodeAttachment(file) {
   if (!file.size || file.size > 3 * 1024 * 1024) throw new Error('凭证不能为空且不能超过 3 MiB。');
@@ -757,7 +794,7 @@ document.addEventListener('paste', async event => {
   if (!all.length) return;
   event.preventDefault();
   if (!usable) {
-    $('formStatus').textContent = '剪贴板里的图片不是受支持的凭证格式，请粘贴 PNG / JPEG 截图，或改用「选择文件」上传 PDF。';
+    $('formStatus').textContent = '剪贴板里的文件不是受支持的凭证格式：请粘贴图片截图，或改用「选择文件」上传 PDF。';
     return;
   }
   await acceptAttachment(usable, true);

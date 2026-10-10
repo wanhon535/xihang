@@ -5,7 +5,7 @@
 // paste / drop / change 事件打进去，检查 DOM 状态和最终提交的 payload。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import vm from 'node:vm';
 import { money, totalCents, filterEntries } from '../frontend/src/ledger-utils.js';
 
@@ -144,6 +144,20 @@ const bootLedgerPage = async (fixture = {}) => {
   };
 
   let objectUrlSeq = 0;
+  // 图片压缩器：页面里调用的是 image-fit.js 的 shrinkImageToLimit。这里默认给一个
+  // 「能压但会记录调用」的假实现，模拟现代浏览器；传 fixture.shrink 可换成失败/自定义版本。
+  const shrinkCalls = [];
+  const fakeShrink = async (file, limit, options = {}) => {
+    shrinkCalls.push({ size: file.size, limit, type: options.type, scales: options.scales });
+    if (options.type === 'image/png') {
+      // 模拟「无损缩放压不进 3 MiB」：返回一个仍然超限的 PNG，逼页面回落到 JPEG 分支。
+      const size = Math.min(file.size, limit + 1024);
+      return new Blob([new Uint8Array([...PNG_HEAD, ...new Uint8Array(Math.max(size - PNG_HEAD.length, 8))])], { type: 'image/png' });
+    }
+    const size = Math.max(Math.min(Math.round(file.size / 4), limit - 4096), 1024);
+    return new Blob([new Uint8Array([255, 216, 255, 224, ...new Uint8Array(Math.max(size - 4, 8))])], { type: 'image/jpeg' });
+  };
+  const shrink = fixture.shrink || fakeShrink;
   const context = vm.createContext({
     document: doc,
     console,
@@ -153,6 +167,9 @@ const bootLedgerPage = async (fixture = {}) => {
     atob,
     File,
     Blob,
+    // 源码里的 import 行被剥掉了，这里把被引用的依赖按名字补进作用域。
+    shrinkImageToLimit: shrink,
+    LOSSLESS_PLAN: { scales: [1, 0.7, 0.5, 0.35], qualities: [1, 1, 1, 1] },
     URL: {
       createObjectURL: () => `blob:mock/${++objectUrlSeq}`,
       revokeObjectURL: () => {}
@@ -194,7 +211,7 @@ const bootLedgerPage = async (fixture = {}) => {
     }
   };
 
-  return { doc, form, calls, stats, $: id => doc.getElementById(id), fieldSetters };
+  return { doc, form, calls, stats, shrinkCalls, $: id => doc.getElementById(id), fieldSetters };
 };
 
 // 在 stub 树里按 className 找元素
@@ -300,22 +317,80 @@ test('弹窗未打开时不接管粘贴（避免影响页面其它输入）', as
   assert.equal(event.defaultPrevented, false, '弹窗关闭时不应拦截');
 });
 
-test('不支持的图片格式给出明确提示，而不是静默无反应', async () => {
+test('非图片/非 PDF 的剪贴板文件给出明确提示，而不是静默无反应', async () => {
   const page = await bootLedgerPage();
   const { $, doc } = page;
   doc.getElementById('editDialog').open = true;
 
-  const bmp = new File([new Uint8Array([66, 77, 1, 2, 3])], 'image.bmp', { type: 'image/bmp' });
-  const event = makePasteEvent([bmp]);
+  const zip = new File([new Uint8Array([80, 75, 3, 4, 1, 2, 3])], '发票.zip', { type: 'application/zip' });
+  const event = makePasteEvent([zip]);
   await doc.fire('paste', event);
 
-  assert.equal(event.defaultPrevented, true, '确有图片时应接管并提示');
+  assert.equal(event.defaultPrevented, true, '确有文件时应接管并提示');
   assert.match($('formStatus').textContent, /不是受支持的凭证格式/, '应提示格式不受支持');
   assert.equal($('attachmentPreview').hidden, true, '不应产生预览');
 });
 
-test('超过 3 MiB 的凭证被拒绝并提示', async () => {
+test('非常规图片格式（如 WebP / BMP）自动转成 JPEG，而不是被拒收', async () => {
   const page = await bootLedgerPage();
+  const { $, doc, shrinkCalls } = page;
+  doc.getElementById('editDialog').open = true;
+
+  // 小图、但魔数不是 PNG/JPEG（模拟 WebP 粘贴）：旧逻辑会直接拒收。
+  const webp = new File([new Uint8Array([82, 73, 70, 70, 4, 5, 6, 7, 87, 69, 66, 80])], 'image.webp', { type: 'image/webp' });
+  await doc.fire('paste', makePasteEvent([webp]));
+
+  assert.equal($('attachmentPreview').hidden, false, 'WebP 应能直接预览');
+  assert.match($('attachmentName').textContent, /^凭证-\d{8}-\d{6}\.jpg$/, '应转成 .jpg 命名');
+  assert.match($('formStatus').textContent, /已自动转为 JPEG/, '应说明做了什么转换');
+  assert.ok(shrinkCalls.some(call => call.type === 'image/jpeg'), '应调用 JPEG 转换');
+});
+
+test('超过 3 MiB 的 JPEG 凭证自动压缩后放行（不再直接拒收）', async () => {
+  const page = await bootLedgerPage();
+  const { $, doc, form, calls, shrinkCalls, fieldSetters } = page;
+  doc.getElementById('editDialog').open = true;
+  fieldSetters.fill();
+
+  const bytes = new Uint8Array(6 * 1024 * 1024);
+  bytes.set([255, 216, 255, 224], 0);
+  const big = new File([bytes], '手机拍发票.jpg', { type: 'image/jpeg' });
+  await doc.fire('paste', makePasteEvent([big]));
+
+  assert.equal($('attachmentPreview').hidden, false, '压缩后应产生预览');
+  assert.match($('attachmentName').textContent, /^凭证-\d{8}-\d{6}\.jpg$/, '应重命名为 .jpg');
+  assert.match($('formStatus').textContent, /已自动压缩/, '应提示已压缩');
+  assert.ok(shrinkCalls.length >= 1, '应走过压缩链路');
+
+  // 真正保存：payload 里的 base64 必须 ≤ 3 MiB（4194304 字符上限）
+  await form.fire('submit', { preventDefault() {} });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const post = calls.find(call => call.path === '/api/admin/costs' && call.options.method === 'POST');
+  const body = JSON.parse(post.options.body);
+  assert.ok(body.attachment.data.length <= 4 * 1024 * 1024, 'base64 不能超过后端上限');
+  const decoded = Buffer.from(body.attachment.data, 'base64');
+  assert.ok(decoded.length <= 3 * 1024 * 1024, '压缩后二进制必须 ≤ 3 MiB');
+  assert.deepEqual([...decoded.subarray(0, 3)], [255, 216, 255], '压缩结果应是合法 JPEG');
+});
+
+test('超过 3 MiB 的 PNG 先试无损缩放，压不进去再回落 JPEG', async () => {
+  const page = await bootLedgerPage();
+  const { $, doc, shrinkCalls } = page;
+  doc.getElementById('editDialog').open = true;
+
+  const bytes = new Uint8Array(5 * 1024 * 1024);
+  bytes.set(PNG_HEAD, 0);
+  const big = new File([bytes], 'huge.png', { type: 'image/png' });
+  await doc.fire('paste', makePasteEvent([big]));
+
+  assert.equal(shrinkCalls[0].type, 'image/png', '第一档应是无损缩放');
+  assert.ok(shrinkCalls.some(call => call.type === 'image/jpeg'), '无损压不下时应回落 JPEG');
+  assert.equal($('attachmentPreview').hidden, false, '最终仍应放行（已压缩）');
+  assert.match($('attachmentName').textContent, /\.jpg$/, '回落 JPEG 后应按 jpg 命名');
+});
+
+test('浏览器不支持压缩（老环境）时，超限凭证仍给出明确提示而非静默失败', async () => {
+  const page = await bootLedgerPage({ shrink: async () => { throw new Error('no canvas'); } });
   const { $, doc } = page;
   doc.getElementById('editDialog').open = true;
 
@@ -405,7 +480,12 @@ test('构建产物已带上粘贴导入（dist 与源码一致）', () => {
   const distHtml = readFileSync('dist/ledger.html', 'utf8');
   assert.match(distHtml, /id="attachmentZone"/);
   assert.match(distHtml, /id="entryAttachment"/);
-  const bundle = readdirSync('dist/assets').find(name => /^ledger-.*\.js$/.test(name));
+  // 注意：dist/assets 里还有一个 ledger-utils-*.js（纯函数单独切出来的 chunk），
+  // 光用 /^ledger-/ 会误取到它。按体积取最大的那个才是页面主 bundle。
+  const candidates = readdirSync('dist/assets').filter(name => /^ledger-.*\.js$/.test(name));
+  const bundle = candidates
+    .map(name => ({ name, size: statSync(`dist/assets/${name}`).size }))
+    .sort((a, b) => b.size - a.size)[0]?.name;
   assert.ok(bundle, '应存在 ledger 的构建产物');
   const code = readFileSync(`dist/assets/${bundle}`, 'utf8');
   assert.match(code, /clipboardData/, '构建产物应包含剪贴板处理逻辑');
