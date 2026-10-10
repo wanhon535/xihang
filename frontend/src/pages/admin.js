@@ -1,6 +1,7 @@
 import { setWorkspaceUser, syncActiveHeading, setNotifications } from '../shell.js';
 import { api, logout, redirectToLogin, requireUser } from '../api.js';
 import { showToast, closeDialogAnimated } from '../ui-feedback.js';
+import { buildSavePayload, commitSavePayload, createSiteMatrixState, pendingSummary, primeSiteMatrixState } from '../site-matrix.js';
 
 const editor = document.querySelector('#adminEditor');
 const saveBtn = document.querySelector('#saveBtn');
@@ -126,6 +127,10 @@ let projects = [];
 let editingProject = null;
 let autoSaveTimer = null;
 let sitesLoaded = false;
+// 站点矩阵的保存状态：本地对象快照 + 上次提交的 payload 签名。
+// 保存成功后**绝不整体替换 `groups`**（会把用户正在编辑的对象变成孤儿），
+// 详见 frontend/src/site-matrix.js 顶部注释。
+const siteState = createSiteMatrixState();
 
 logoutBtn.addEventListener('click', logout);
 addGroupBtn.addEventListener('click', () => {
@@ -231,6 +236,7 @@ async function init() {
 
     overview = overviewPayload.overview || {};
     groups = groupPayload.groups || [];
+    primeSiteMatrixState(groups, siteState);
     users = userPayload.users || [];
     settings = settingsPayload.settings || overview.settings || {};
     auditLogs = logPayload.logs || [];
@@ -587,30 +593,45 @@ function scheduleAutoSave() {
 
 async function saveGroups(isAuto = false) {
   clearTimeout(autoSaveTimer);
+
+  // 组装 payload：没填完的新入口不进 payload（后端也会丢），但留在本地等用户填完。
+  const { groups: payloadGroups, pending, order } = buildSavePayload(groups, siteState);
+  const signature = JSON.stringify(payloadGroups);
+  const note = pendingSummary(pending);
+
+  // 没有任何可提交的变化（例如刚点「新增入口」还没命名、或只是把某个字段清空重填）
+  // → 不提交。否则每次都会触发后端「删全表 + 全量重插」，白白换掉所有 id 并刷一堆审计日志，
+  // 状态栏还会谎报「已保存」。
+  if (isAuto && signature === siteState.signature) {
+    saveStatus.textContent = note || '已自动保存（无新变更）';
+    return;
+  }
+
   saveBtn.disabled = true;
   saveStatus.textContent = isAuto ? '正在自动保存...' : '正在保存...';
 
   try {
     const payload = await api('/api/admin/groups', {
       method: 'PUT',
-      body: JSON.stringify({ groups })
+      body: JSON.stringify({ groups: payloadGroups })
     });
     const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-    groups = payload.groups;
+    // ⚠️ 这里**不能**写 `groups = payload.groups`：服务端返回的是「过滤掉未填完入口」的权威副本，
+    // 直接替换会让用户正在填的那张卡片脱离 `groups`，之后怎么填都存不进去
+    // （表现：「保存了但没展示」）。改为就地把服务端 id 回填到本地对象。
+    commitSavePayload(order, payload.groups, siteState);
+    siteState.signature = signature;
 
     if (isAuto) {
       // Autosave must never rebuild the editor DOM: renderGroups() replaces
       // every <input>/<textarea> in the panel, which — if the user is mid
       // keystroke when the debounce fires, a completely normal timing —
-      // silently rips focus out of whatever field they're typing in. We
-      // still refresh `groups` in the background so a later manual save or
-      // structural edit starts from the server's canonical copy, but we
-      // leave the visible DOM (and the user's cursor) untouched.
-      saveStatus.textContent = `已自动保存到 MySQL（${time}）`;
+      // silently rips focus out of whatever field they're typing in.
+      saveStatus.textContent = `已自动保存到 MySQL（${time}）${note ? `；${note}` : ''}`;
     } else {
       renderGroups();
-      saveStatus.textContent = `已保存到 MySQL（${time}），成员刷新工作台即可看到新的入口分组。`;
-      showToast('已保存', saveStatus);
+      saveStatus.textContent = `已保存到 MySQL（${time}），成员刷新工作台即可看到新的入口分组。${note ? `；${note}` : ''}`;
+      showToast(note ? '部分内容未入库' : '已保存', saveStatus);
     }
 
     await Promise.all([refreshOverview(), refreshAuditLogs()]);
