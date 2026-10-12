@@ -25,7 +25,8 @@ const startHarness = async () => {
         rows.push({ id: '1', date: params[0], project: params[1], category: params[2], description: params[3], amountCents: params[4], paymentStatus: params[5], handler: params[6], notes: params[7], createdBy: String(params[8]), createdByName: params[9], updatedBy: String(params[10]), updatedByName: params[11], version: 1 });
         return [{ insertId: 1 }];
       }
-      if (sql.startsWith('INSERT INTO cost_attachments')) { files[0] = { filename: params[1], mime: params[2], content: params[3] }; return [{}]; }
+      if (sql.startsWith('SELECT id FROM cost_attachments')) return [[]];
+      if (sql.startsWith('INSERT INTO cost_attachments')) { files[0] = { id: '1', entryId: params[0], filename: params[1], mime: params[2], content: params[3] }; return [{}]; }
       if (sql.startsWith('SELECT filename')) return [params[0] === '1' ? files : []];
       if (sql.includes('FROM cost_entries e')) return [rows];
       throw new Error(`unexpected SQL: ${sql}`);

@@ -33,10 +33,12 @@ function rewrite(sql) {
 function wrapQuery(target) {
   return async (sql, params = []) => {
     const safeSQL = rewrite(sql);
-    if (injectFailure && sql.startsWith('INSERT INTO cost_attachments')) {
+    if (injectFailure && (sql.startsWith('INSERT INTO cost_attachments') || sql.startsWith('UPDATE cost_attachments'))) {
       injectFailure = false;
       params = [...params];
-      params[4] = null; // Real MySQL NOT NULL violation AFTER parent insert/update.
+      // Real MySQL NOT NULL violation AFTER parent insert/update.
+      // INSERT (entry_id,filename,...) → uploaded_by 置空；UPDATE 单凭证路径 → filename 置空。
+      params[sql.startsWith('UPDATE cost_attachments') ? 0 : 4] = null;
     }
     stats.statements++;
     return target.query(safeSQL, params);
@@ -142,7 +144,7 @@ try {
   assert.equal(row.attachmentName, updatedFile.name);
   assert.equal((await db.query('SELECT COUNT(*) AS n FROM cost_attachments'))[0][0].n, 1);
   assert.deepEqual(Buffer.from(await (await call(`/attachments/${attachmentId}`)).arrayBuffer()), Buffer.from(updatedFile.data, 'base64'));
-  step('update+attachment upsert commit; metadata/version and unique one-attachment invariant');
+  step('update+attachment upsert commit; metadata/version and single attachment replaced in place');
   assert.equal((await call(`/${id}`, 'PUT', update)).status, 409);
   assert.equal((await call('/999999', 'PUT', update)).status, 404);
   assert.equal((await call('/attachments/999999')).status, 404);
@@ -178,6 +180,33 @@ try {
   assert.deepEqual(Buffer.from(await (await call(`/attachments/${largeEntry.attachmentId}`)).arrayBuffer()), large);
   step('3 MiB attachment HTTP/MySQL MEDIUMBLOB round trip');
 
+  // 一条记录可以挂多张凭证（老库的唯一索引已迁移掉）：追加 2 张 → 共 3 张，
+  // 且列表仍然「一条记录一行」（相关子查询而不是 JOIN，不会被复制成多行）。
+  response = await call(`/${id}`, 'PUT', { ...input, project: '多凭证追加', version: 3, attachments: [file, file] });
+  assert.equal(response.status, 200);
+  const multi = (await response.json()).entry;
+  assert.equal(multi.attachmentCount, 3);
+  assert.equal(multi.attachments.length, 3);
+  assert.deepEqual(multi.attachments.map(a => a.name), [updatedFile.name, file.name, file.name]);
+  const [countRows] = await db.query('SELECT COUNT(*) AS n FROM cost_attachments WHERE entry_id=?', [id]);
+  assert.equal(countRows[0].n, 3, '三张凭证都要真的落库');
+  const [indexRows] = await db.query(`SHOW INDEX FROM cost_attachments WHERE Key_name='uk_cost_attachment_entry'`);
+  assert.equal(indexRows.length, 0, '唯一索引必须已被迁移掉');
+  const listed = (await (await call()).json()).entries;
+  assert.equal(listed.length, 2, '多凭证不能把记录复制成多行');
+  assert.equal(listed.find(entry => entry.id === id).attachments.length, 3);
+  // 只删一张：剩下 2 张
+  const dropId = multi.attachments[0].id;
+  response = await call(`/${id}`, 'PUT', { ...input, project: '多凭证删除', version: 4, removeAttachmentIds: [dropId] });
+  assert.equal(response.status, 200);
+  const after = (await response.json()).entry;
+  assert.equal(after.attachmentCount, 2);
+  assert.ok(!after.attachments.some(a => a.id === dropId), '被删的那张不应再出现');
+  assert.equal((await call(`/attachments/${dropId}`)).status, 404, '被删凭证的下载接口应 404');
+  assert.equal((await call(`/${id}/attachments`)).status, 200);
+  assert.equal((await (await call(`/${id}/attachments`)).json()).attachments.length, 2);
+  step('multiple attachments per entry: append/remove keep the rest, list stays one row per entry');
+
   // There is deliberately no DELETE endpoint. Verify DB-level FK and transactional delete only.
   assert.equal((await call(`/${id}`, 'DELETE')).status, 404);
   await assert.rejects(db.query('DELETE FROM cost_entries WHERE id=?', [id]), e => e.code === 'ER_ROW_IS_REFERENCED_2');
@@ -196,8 +225,8 @@ try {
     assert.equal((await call(`/attachments/${attachmentId}`)).status, 404);
   } finally { connection.release(); }
   step('no API DELETE (404); FK restriction; DB-level delete rollback and commit');
-  assert.deepEqual(audits.map(a => a.action), ['cost.create', 'cost.update', 'cost.update', 'cost.create']);
-  assert.equal(stats.commits, 5);
+  assert.deepEqual(audits.map(a => a.action), ['cost.create', 'cost.update', 'cost.update', 'cost.create', 'cost.update', 'cost.update']);
+  assert.equal(stats.commits, 7);
   assert.equal(stats.rollbacks, 6);
   console.log(JSON.stringify({ passed: passed.length, ...stats, auditEvents: audits.length }));
 } catch (error) {

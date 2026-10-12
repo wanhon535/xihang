@@ -246,13 +246,24 @@ const pngFile = (extraBytes = 40) => new File([new Uint8Array([...PNG_HEAD, ...n
 const jpegFile = () => new File([new Uint8Array([255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 1, 2, 3])], 'image.png', { type: 'image/jpeg' });
 const pdfFile = () => new File([new Uint8Array([...Buffer.from('%PDF-1.7'), 1, 2, 3])], 'image.png', { type: 'application/pdf' });
 
+// 凭证区现在是一个「待上传凭证列表」：每张一行 .ledger-attach-item。
+const attachItems = $ => $('attachmentPreview').children || [];
+const itemName = item => (findByClass(item, 'ledger-attach-name') || {}).textContent || '';
+const itemSize = item => (findByClass(item, 'ledger-attach-size') || {}).textContent || '';
+const itemThumb = item => findByClass(item, 'ledger-attach-thumb');
+const firstName = $ => (attachItems($)[0] ? itemName(attachItems($)[0]) : '');
+const firstSize = $ => (attachItems($)[0] ? itemSize(attachItems($)[0]) : '');
+const firstThumb = $ => (attachItems($)[0] ? itemThumb(attachItems($)[0]) : null);
+const firstThumbSrc = $ => { const thumb = firstThumb($); return thumb ? (thumb.src || thumb.getAttribute('src') || '') : ''; };
+
 const attachmentState = $ => ({
   idleHidden: $('attachmentIdle').hidden,
   previewHidden: $('attachmentPreview').hidden,
-  name: $('attachmentName').textContent,
-  size: $('attachmentSize').textContent,
-  imgSrc: $('attachmentPreviewImg').src || $('attachmentPreviewImg').getAttribute('src') || '',
-  imgHidden: $('attachmentPreviewImg').hidden,
+  count: attachItems($).length,
+  name: firstName($),
+  size: firstSize($),
+  thumbTag: firstThumb($) ? firstThumb($).tagName : '',
+  thumbSrc: firstThumbSrc($),
   clearHidden: $('attachmentClearBtn').hidden,
   hint: $('attachmentHint').textContent,
   formStatus: $('formStatus').textContent
@@ -274,10 +285,11 @@ test('粘贴 PNG 截图：接管剪贴板、显示预览、按内容命名为 .p
   assert.equal(state.idleHidden, true, '空闲提示应隐藏');
   assert.equal(state.previewHidden, false, '预览区应出现');
   assert.equal(state.clearHidden, false, '「移除已选凭证」按钮应出现');
+  assert.equal(state.count, 1, '应列出 1 张待上传凭证');
   assert.match(state.name, /^凭证-\d{8}-\d{6}\.png$/, `文件名应按内容命名为 .png，实际 ${state.name}`);
   assert.match(state.size, /^\d+(\.\d)? (B|KB)$/, `应显示体积，实际 ${state.size}`);
-  assert.equal(state.imgHidden, false, '图片凭证应显示缩略图');
-  assert.match(state.imgSrc, /^blob:/, '缩略图应指向 blob URL');
+  assert.equal(state.thumbTag, 'IMG', '图片凭证应显示缩略图');
+  assert.match(state.thumbSrc, /^blob:/, '缩略图应指向 blob URL');
   assert.match(state.hint, /待上传凭证：.*\.png/, '提示应说明待上传凭证');
 });
 
@@ -287,12 +299,15 @@ test('粘贴 JPEG / PDF 也能识别，且按真实格式命名（而不是盲�
   doc.getElementById('editDialog').open = true;
 
   await doc.fire('paste', makePasteEvent([jpegFile()]));
-  assert.match($('attachmentName').textContent, /\.jpg$/, 'JPEG 魔数应命名为 .jpg');
-  assert.equal($('attachmentPreviewImg').hidden, false, 'JPEG 也应显示缩略图');
+  assert.match(firstName($), /\.jpg$/, 'JPEG 魔数应命名为 .jpg');
+  assert.equal(firstThumb($).tagName, 'IMG', 'JPEG 也应显示缩略图');
 
   await doc.fire('paste', makePasteEvent([pdfFile()]));
-  assert.match($('attachmentName').textContent, /\.pdf$/, 'PDF 魔数应命名为 .pdf');
-  assert.equal($('attachmentPreviewImg').hidden, true, 'PDF 不显示图片缩略图');
+  assert.equal(attachItems($).length, 2, '第二张凭证应追加，而不是把第一张替换掉');
+  const pdfItem = attachItems($)[1];
+  assert.match(itemName(pdfItem), /\.pdf$/, 'PDF 魔数应命名为 .pdf');
+  assert.equal(itemThumb(pdfItem).tagName, 'SPAN', 'PDF 不显示图片缩略图');
+  assert.equal(itemThumb(pdfItem).textContent, 'PDF', 'PDF 用格式标记代替缩略图');
   assert.match($('attachmentHint').textContent, /\.pdf/);
 });
 
@@ -341,7 +356,7 @@ test('非常规图片格式（如 WebP / BMP）自动转成 JPEG，而不是被�
   await doc.fire('paste', makePasteEvent([webp]));
 
   assert.equal($('attachmentPreview').hidden, false, 'WebP 应能直接预览');
-  assert.match($('attachmentName').textContent, /^凭证-\d{8}-\d{6}\.jpg$/, '应转成 .jpg 命名');
+  assert.match(firstName($), /^凭证-\d{8}-\d{6}\.jpg$/, '应转成 .jpg 命名');
   assert.match($('formStatus').textContent, /已自动转为 JPEG/, '应说明做了什么转换');
   assert.ok(shrinkCalls.some(call => call.type === 'image/jpeg'), '应调用 JPEG 转换');
 });
@@ -358,7 +373,7 @@ test('超过 3 MiB 的 JPEG 凭证自动压缩后放行（不再直接拒收）'
   await doc.fire('paste', makePasteEvent([big]));
 
   assert.equal($('attachmentPreview').hidden, false, '压缩后应产生预览');
-  assert.match($('attachmentName').textContent, /^凭证-\d{8}-\d{6}\.jpg$/, '应重命名为 .jpg');
+  assert.match(firstName($), /^凭证-\d{8}-\d{6}\.jpg$/, '应重命名为 .jpg');
   assert.match($('formStatus').textContent, /已自动压缩/, '应提示已压缩');
   assert.ok(shrinkCalls.length >= 1, '应走过压缩链路');
 
@@ -367,8 +382,9 @@ test('超过 3 MiB 的 JPEG 凭证自动压缩后放行（不再直接拒收）'
   await new Promise(resolve => setTimeout(resolve, 0));
   const post = calls.find(call => call.path === '/api/admin/costs' && call.options.method === 'POST');
   const body = JSON.parse(post.options.body);
-  assert.ok(body.attachment.data.length <= 4 * 1024 * 1024, 'base64 不能超过后端上限');
-  const decoded = Buffer.from(body.attachment.data, 'base64');
+  assert.equal(body.attachments.length, 1, '一张凭证进 attachments 数组');
+  assert.ok(body.attachments[0].data.length <= 4 * 1024 * 1024, 'base64 不能超过后端上限');
+  const decoded = Buffer.from(body.attachments[0].data, 'base64');
   assert.ok(decoded.length <= 3 * 1024 * 1024, '压缩后二进制必须 ≤ 3 MiB');
   assert.deepEqual([...decoded.subarray(0, 3)], [255, 216, 255], '压缩结果应是合法 JPEG');
 });
@@ -386,7 +402,7 @@ test('超过 3 MiB 的 PNG 先试无损缩放，压不进去再回落 JPEG', asy
   assert.equal(shrinkCalls[0].type, 'image/png', '第一档应是无损缩放');
   assert.ok(shrinkCalls.some(call => call.type === 'image/jpeg'), '无损压不下时应回落 JPEG');
   assert.equal($('attachmentPreview').hidden, false, '最终仍应放行（已压缩）');
-  assert.match($('attachmentName').textContent, /\.jpg$/, '回落 JPEG 后应按 jpg 命名');
+  assert.match(firstName($), /\.jpg$/, '回落 JPEG 后应按 jpg 命名');
 });
 
 test('浏览器不支持压缩（老环境）时，超限凭证仍给出明确提示而非静默失败', async () => {
@@ -432,7 +448,7 @@ test('选择文件仍可用，且扩展名匹配时保留原文件名', async ()
   input.files = [picked];
   await input.fire('change', {});
 
-  assert.equal($('attachmentName').textContent, '十月服务器发票.png', '扩展名已匹配时应保留原文件名');
+  assert.equal(firstName($), '十月服务器发票.png', '扩展名已匹配时应保留原文件名');
   assert.equal($('attachmentPreview').hidden, false);
 });
 
@@ -444,7 +460,7 @@ test('粘贴的凭证会真正进入保存 payload（base64 内容与粘贴内�
 
   const pasted = pngFile(24);
   await doc.fire('paste', makePasteEvent([pasted]));
-  const expectedName = $('attachmentName').textContent;
+  const expectedName = firstName($);
 
   await form.fire('submit', { preventDefault() {} });
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -452,12 +468,12 @@ test('粘贴的凭证会真正进入保存 payload（base64 内容与粘贴内�
   const post = calls.find(call => call.path === '/api/admin/costs' && call.options.method === 'POST');
   assert.ok(post, '应发出 POST /api/admin/costs');
   const body = JSON.parse(post.options.body);
-  assert.ok(body.attachment, 'payload 应带上凭证');
-  assert.equal(body.attachment.name, expectedName, '凭证名应与预览一致');
+  assert.ok(body.attachments && body.attachments.length === 1, 'payload 应带上凭证数组');
+  assert.equal(body.attachments[0].name, expectedName, '凭证名应与预览一致');
   assert.equal(body.project, '服务器采购', '项目应来自下拉');
   assert.equal(body.category, '云服务器', '类别应来自下拉');
 
-  const decoded = Buffer.from(body.attachment.data, 'base64');
+  const decoded = Buffer.from(body.attachments[0].data, 'base64');
   assert.deepEqual([...decoded.subarray(0, 8)], PNG_HEAD, 'base64 解码后应是原始 PNG 字节');
   assert.equal(decoded.length, pasted.size, '上传字节数应与粘贴文件一致');
 });
@@ -469,9 +485,12 @@ test('页面标记：凭证区提供粘贴入口，且初始隐藏预览与移�
   assert.ok(fileInput, '凭证栏仍要有隐藏的文件选择入口（兼容原上传方式）');
   assert.match(fileInput[0], /name="attachment"/, '必须保留 name="attachment"，后端字段名不能变');
   assert.match(fileInput[0], /type="file"/);
+  assert.match(fileInput[0], /multiple/, '文件选择必须允许多选，否则多凭证根本选不进来');
   const hidden = hiddenIdsInMarkup();
   assert.ok(hidden.has('attachmentPreview'), '初始应隐藏预览区');
   assert.ok(hidden.has('attachmentClearBtn'), '初始应隐藏「移除已选凭证」');
+  assert.ok(hidden.has('attachmentExisting'), '初始应隐藏「已有凭证」区');
+  assert.ok(hidden.has('voucherNav'), '单张凭证时不必显示左右翻页');
   assert.ok(!hidden.has('attachmentIdle'), '空闲态提示初始应可见');
 });
 
@@ -490,7 +509,11 @@ test('构建产物已带上粘贴导入（dist 与源码一致）', () => {
   const code = readFileSync(`dist/assets/${bundle}`, 'utf8');
   assert.match(code, /clipboardData/, '构建产物应包含剪贴板处理逻辑');
   assert.match(code, /不是受支持的凭证格式/, '构建产物应包含格式错误提示');
-  assert.match(code, /粘贴截图/, '构建产物应包含粘贴提示文案');
+  assert.match(code, /removeAttachmentIds/, '构建产物应包含「一条记录多张凭证」的追加/删除逻辑');
+  assert.match(code, /清空已选凭证/, '构建产物应包含多凭证的操作文案');
+  // 注意：「粘贴截图」这句提示现在只在 ledger.html 里（凭证区空闲态），不再出现在 JS bundle 里，
+  // 所以这里改成断言 HTML 侧有这句，别再把旧 bundle 的字符串当回归基线。
+  assert.match(LEDGER_HTML, /粘贴截图/);
 });
 
 // ---------------- 本轮新增：类别下拉 / 凭证出图 / 项目维度展示 ----------------
@@ -705,4 +728,162 @@ test('页面标记：筛选区是多选控件而不是单选 select', () => {
   assert.match(LEDGER_HTML, /id="activeFilters"/, '应有已选条件条');
   assert.ok(!/id="project"/.test(LEDGER_HTML), '旧的项目单选 select 应已移除');
   assert.ok(!/id="category"/.test(LEDGER_HTML), '旧的类别单选 select 应已移除');
+});
+
+// ---------------- 本轮新增：一条记录多张凭证（修「多凭证被替换」） ----------------
+
+const lastChild = element => element.children[element.children.length - 1];
+
+test('一次粘贴多张截图会全部保留（不再互相替换），保存时一并提交', async () => {
+  const page = await bootLedgerPage();
+  const { $, doc, form, calls, fieldSetters } = page;
+  doc.getElementById('editDialog').open = true;
+  fieldSetters.fill();
+
+  await doc.fire('paste', makePasteEvent([pngFile(8), pngFile(16), pngFile(24)]));
+  assert.equal(attachItems($).length, 3, '三张剪贴板图片都应进入待上传列表');
+  assert.equal($('attachmentClearBtn').textContent, '清空已选凭证（3）', '按钮应显示张数');
+  assert.match($('attachmentHint').textContent, /共 3 张/, '提示应说明一共几张');
+
+  // 再粘一张：追加而不是替换
+  await doc.fire('paste', makePasteEvent([pngFile(32)]));
+  assert.equal(attachItems($).length, 4, '后续粘贴应追加');
+
+  await form.fire('submit', { preventDefault() {} });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const post = calls.find(call => call.path === '/api/admin/costs' && call.options.method === 'POST');
+  const body = JSON.parse(post.options.body);
+  assert.equal(body.attachments.length, 4, '四张凭证都要进 payload');
+  assert.equal(body.attachment, undefined, '不应再走单凭证字段');
+  const names = body.attachments.map(item => item.name);
+  assert.equal(new Set(names).size, 4, `四张凭证的文件名应各不相同，实际 ${names.join(' / ')}`);
+  for (const item of body.attachments) {
+    const bytes = Buffer.from(item.data, 'base64');
+    assert.deepEqual([...bytes.subarray(0, 8)], PNG_HEAD, '每张都应是原始 PNG 字节');
+  }
+});
+
+test('文件选择支持多选：可逐张移除，也能一键清空', async () => {
+  const page = await bootLedgerPage();
+  const { $, doc } = page;
+  doc.getElementById('editDialog').open = true;
+
+  const input = $('entryAttachment');
+  input.files = [
+    new File([new Uint8Array([...PNG_HEAD, 1])], '发票A.png', { type: 'image/png' }),
+    new File([new Uint8Array([...PNG_HEAD, 2])], '发票B.png', { type: 'image/png' })
+  ];
+  await input.fire('change', {});
+  assert.equal(attachItems($).length, 2, '多选应全部收下');
+  assert.deepEqual(attachItems($).map(itemName), ['发票A.png', '发票B.png']);
+
+  // 点第一张的「×」：只移除这一张
+  await lastChild(attachItems($)[0]).fire('click', {});
+  assert.deepEqual(attachItems($).map(itemName), ['发票B.png'], '只应移除被点的那一张');
+  assert.equal($('attachmentPreview').hidden, false, '还剩一张时预览区仍在');
+
+  await $('attachmentClearBtn').fire('click', {});
+  assert.equal(attachItems($).length, 0, '清空按钮应清掉全部');
+  assert.equal($('attachmentPreview').hidden, true);
+  assert.equal($('attachmentIdle').hidden, false);
+});
+
+test('编辑已有记录：列出已有凭证，可标记删除并在保存时提交 removeAttachmentIds', async () => {
+  const entry = {
+    ...FIXTURE[0], version: 3,
+    attachments: [
+      { id: '71', name: '凭证A.png', kind: 'image' },
+      { id: '72', name: '发票B.pdf', kind: 'pdf' }
+    ]
+  };
+  const page = await bootLedgerPage({ entries: [entry] });
+  const { $, doc, form, calls, fieldSetters } = page;
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  const row = $('rows').children[0].children[0];
+  await lastChild(row).children[0].fire('click', {}); // 「编辑」
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(doc.getElementById('editDialog').open, true, '应打开编辑弹窗');
+  assert.equal($('attachmentExisting').hidden, false, '应列出已有凭证');
+  assert.match($('attachmentExisting').children[0].textContent, /已有凭证 2 张，保存后保留 2 张/);
+  const chips = $('attachmentExisting').children[1].children;
+  assert.equal(chips.length, 2, '两张已有凭证各一个 chip');
+
+  // 标记删除第一张
+  await lastChild(chips[0]).fire('click', {});
+  assert.match($('formStatus').textContent, /已标记删除 1 张已有凭证/, '应提示保存后生效');
+  const after = $('attachmentExisting').children[1].children;
+  assert.equal(after.length, 2, '保留的 chip + 待删除的 chip');
+  assert.ok(after.some(chip => chip.className.includes('is-removed')), '待删除的 chip 应有删除样式');
+
+  fieldSetters.fill();
+  await form.fire('submit', { preventDefault() {} });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const put = calls.find(call => call.path === '/api/admin/costs/1' && call.options.method === 'PUT');
+  assert.ok(put, '应发出 PUT');
+  const body = JSON.parse(put.options.body);
+  assert.deepEqual(body.removeAttachmentIds, ['71'], '应提交被删除的凭证 id');
+  assert.equal(body.attachments, undefined, '没选新凭证就不该带 attachments');
+  assert.equal(body.version, 3, '乐观锁版本要一起带上');
+});
+
+test('凭证列：一条记录多张凭证全部出图，弹窗里可左右翻', async () => {
+  const entry = {
+    ...FIXTURE[0],
+    attachments: [
+      { id: '81', name: '凭证1.png', kind: 'image' },
+      { id: '82', name: '凭证2.png', kind: 'image' },
+      { id: '83', name: '凭证3.png', kind: 'image' },
+      { id: '84', name: '发票4.pdf', kind: 'pdf' }
+    ]
+  };
+  const page = await bootLedgerPage({ entries: [entry] });
+  const { $, stats } = page;
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  const cell = findByClass($('rows'), 'ledger-voucher');
+  const strip = findByClass(cell, 'ledger-voucher-strip');
+  assert.equal(strip.children.length, 4, '前 3 张出图 + 1 个「+1」角标');
+  assert.equal(lastChild(strip).textContent, '+1', '超出的张数用 +N 表示');
+  assert.match(findByClass(cell, 'ledger-voucher-name').textContent, /共 4 张凭证/);
+  assert.ok(lastChild(strip).className.includes('ledger-voucher-more'));
+  assert.equal(stats.fetchCalls, 3, 'PDF 不需要请求二进制，另 3 张各请求一次');
+
+  // 点第二张 → 大图弹窗停在第 2 张，且能翻页
+  const thumbs = strip.children.filter(child => child.className.includes('ledger-voucher-thumb'));
+  await thumbs[1].fire('click', {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal($('voucherDialog').open, true);
+  assert.equal($('voucherNav').hidden, false, '多张时应显示翻页');
+  assert.equal($('voucherCounter').textContent, '第 2 / 4 张');
+  assert.match($('voucherMeta').textContent, /凭证2\.png/);
+
+  await $('voucherNextBtn').fire('click', {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal($('voucherCounter').textContent, '第 3 / 4 张');
+
+  // 翻到 PDF：不塞 <img>，提示下载
+  await $('voucherNextBtn').fire('click', {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal($('voucherCounter').textContent, '第 4 / 4 张');
+  assert.equal($('voucherImage').hidden, true, 'PDF 不显示 <img>');
+  assert.match($('voucherMeta').textContent, /PDF 无法直接预览/);
+
+  // 再翻一张回到第 1 张（循环），ArrowLeft 往回流
+  await $('voucherNextBtn').fire('click', {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal($('voucherCounter').textContent, '第 1 / 4 张', '翻到最后应回到第一张');
+  await $('voucherDialog').ownerDocument.fire('keydown', { key: 'ArrowLeft' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal($('voucherCounter').textContent, '第 4 / 4 张', '← 键应往前翻');
+
+  // 单张凭证时不该出现翻页控件
+  const single = await bootLedgerPage({ entries: [{ ...FIXTURE[0], attachments: [{ id: '91', name: 'only.png', kind: 'image' }] }] });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const onlyThumb = findByClass(single.$('rows'), 'ledger-voucher-thumb');
+  await onlyThumb.fire('click', {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(single.$('voucherNav').hidden, true, '只有一张时不显示翻页');
+  assert.equal(single.$('voucherCounter').textContent, '');
 });

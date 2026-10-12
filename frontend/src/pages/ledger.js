@@ -56,30 +56,40 @@ function sorted(list) {
   });
 }
 function paymentLabel(value) { return value === 'paid' ? '已付款' : '待付款'; }
-// ---------- 凭证展示：列表里直接出图（不再只是一个下载按钮），点开看大图 ----------
+// ---------- 凭证展示：列表里直接出图（一条记录可以有多张），点开看大图并可左右翻 ----------
 // 附件接口带 Content-Disposition: attachment，直接塞进 <img src> 不可靠，
 // 所以统一 fetch 成 blob 再用 object URL 渲染，顺便保住原来的下载/鉴权逻辑。
 const voucherUrls = new Map();     // attachmentId -> blob URL
-const voucherEntries = new Map();  // attachmentId -> entry
-let voucherEntry = null;
-function isImageVoucher(entry) { return /\.(png|jpe?g)$/i.test(entry.attachmentName || ''); }
-async function fetchVoucherUrl(entry) {
-  const cached = voucherUrls.get(entry.attachmentId);
+const voucherEntries = new Map();  // attachmentId -> entry（鉴权失败时要用到）
+let voucherHost = null;            // 正在查看的记录
+let voucherList = [];              // 正在查看的凭证列表（一条记录可能多张）
+let voucherIndex = 0;
+let voucherCurrent = null;         // 当前这张（下载按钮用）
+// 一条记录的凭证列表：新接口给 attachments，老数据兜底用 attachmentId/Name。
+function entryAttachments(entry) {
+  if (!entry) return [];
+  if (Array.isArray(entry.attachments) && entry.attachments.length) return entry.attachments;
+  if (entry.attachmentId) return [{ id: String(entry.attachmentId), name: entry.attachmentName || '', kind: /\.pdf$/i.test(entry.attachmentName || '') ? 'pdf' : 'image' }];
+  return [];
+}
+function isPdfAttachment(attachment) { return attachment?.kind === 'pdf' || /\.pdf$/i.test(String(attachment?.name || '')); }
+async function fetchVoucherUrl(attachmentId) {
+  const cached = voucherUrls.get(attachmentId);
   if (cached) return cached;
-  const response = await fetch(`${API_BASE_URL}${endpoint}/attachments/${encodeURIComponent(entry.attachmentId)}`, { credentials: 'include', cache: 'no-store' });
+  const response = await fetch(`${API_BASE_URL}${endpoint}/attachments/${encodeURIComponent(attachmentId)}`, { credentials: 'include', cache: 'no-store' });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw Object.assign(new Error(payload.message || '凭证加载失败'), { status: response.status, code: payload.code });
   }
   const url = URL.createObjectURL(await response.blob());
-  voucherUrls.set(entry.attachmentId, url);
+  voucherUrls.set(attachmentId, url);
   return url;
 }
 async function paintThumb(button) {
   const entry = voucherEntries.get(button.dataset.attachmentId);
   if (!entry) return;
   try {
-    const url = await fetchVoucherUrl(entry);
+    const url = await fetchVoucherUrl(button.dataset.attachmentId);
     const image = node('img');
     image.src = url;
     image.alt = `凭证：${entry.project || entry.date}`;
@@ -92,7 +102,7 @@ async function paintThumb(button) {
     if (!handleAuth(error)) status(`凭证加载失败：${error.message}`, true);
   }
 }
-// 84 张凭证一次性全拉会打爆流量，所以滚到可视区域才加载缩略图。
+// 凭证可能上百张，一次性全拉会打爆流量，所以滚到可视区域才加载缩略图。
 const thumbObserver = ('IntersectionObserver' in window && document.querySelector('.ledger-table-scroll'))
   ? new IntersectionObserver(records => {
       for (const record of records) {
@@ -102,48 +112,72 @@ const thumbObserver = ('IntersectionObserver' in window && document.querySelecto
       }
     }, { root: document.querySelector('.ledger-table-scroll'), rootMargin: '240px' })
   : null;
-function voucherCell(entry) {
-  const wrap = node('div', undefined, 'ledger-voucher');
-  if (!entry.attachmentId) { wrap.textContent = '—'; return wrap; }
-  voucherEntries.set(entry.attachmentId, entry);
+function voucherThumb(entry, attachment) {
+  voucherEntries.set(attachment.id, entry);
   const button = node('button', undefined, 'ledger-voucher-thumb');
   button.type = 'button';
-  button.dataset.attachmentId = entry.attachmentId;
-  button.setAttribute('aria-label', `查看凭证：${entry.attachmentName || entry.project || entry.date}`);
-  button.addEventListener('click', () => openVoucher(entry));
-  if (isImageVoucher(entry)) {
+  button.dataset.attachmentId = attachment.id;
+  button.setAttribute('aria-label', `查看凭证：${attachment.name || entry.project || entry.date}`);
+  button.addEventListener('click', () => openVoucher(entry, attachment.id));
+  if (isPdfAttachment(attachment)) {
+    button.classList.add('is-pending');
+    button.textContent = 'PDF';
+  } else {
     button.classList.add('is-loading');
     if (thumbObserver) thumbObserver.observe(button);
     else paintThumb(button);
-  } else {
-    button.classList.add('is-pending');
-    button.textContent = 'PDF';
   }
-  wrap.append(button, node('span', entry.attachmentName || '凭证', 'ledger-voucher-name'));
+  return button;
+}
+function voucherCell(entry) {
+  const wrap = node('div', undefined, 'ledger-voucher');
+  const list = entryAttachments(entry);
+  if (!list.length) { wrap.textContent = '—'; return wrap; }
+  const shown = list.slice(0, 3);
+  const strip = node('div', undefined, 'ledger-voucher-strip');
+  for (const attachment of shown) strip.append(voucherThumb(entry, attachment));
+  if (list.length > shown.length) strip.append(node('span', `+${list.length - shown.length}`, 'ledger-voucher-more'));
+  wrap.append(strip, node('span', list.length > 1 ? `共 ${list.length} 张凭证` : (list[0].name || '凭证'), 'ledger-voucher-name'));
   return wrap;
 }
-async function openVoucher(entry) {
+async function openVoucher(entry, attachmentId) {
   if (!user) return;
-  voucherEntry = entry;
+  voucherHost = entry;
+  voucherList = entryAttachments(entry);
+  voucherIndex = Math.max(0, voucherList.findIndex(item => item.id === String(attachmentId)));
+  if (!voucherList.length) voucherList = [{ id: String(attachmentId), name: entry.attachmentName || '', kind: /\.pdf$/i.test(entry.attachmentName || '') ? 'pdf' : 'image' }];
   const viewer = $('voucherDialog');
+  if (!viewer.open) viewer.showModal();
+  await showVoucherAt(voucherIndex);
+}
+async function showVoucherAt(index) {
+  const attachment = voucherList[index];
+  if (!attachment) return;
+  voucherIndex = index;
+  voucherCurrent = attachment;
   const image = $('voucherImage');
-  $('voucherTitle').textContent = isImageVoucher(entry) ? '凭证' : 'PDF 凭证';
-  $('voucherMeta').textContent = `${entry.date} · ${entry.project || '—'} · ¥${money(entry.amountCents)} · ${entry.attachmentName || ''}`;
+  const pdf = isPdfAttachment(attachment);
+  let meta = `${voucherHost?.date || ''} · ${voucherHost?.project || '—'} · ¥${money(voucherHost?.amountCents || '0')} · ${attachment.name || ''}`;
+  if (voucherList.length > 1) meta += ` · 第 ${index + 1}/${voucherList.length} 张`;
+  $('voucherTitle').textContent = pdf ? 'PDF 凭证' : '凭证';
+  $('voucherNav').hidden = voucherList.length < 2;
+  $('voucherCounter').textContent = voucherList.length > 1 ? `第 ${index + 1} / ${voucherList.length} 张` : '';
   image.removeAttribute('src');
   image.hidden = true;
-  viewer.showModal();
-  if (!isImageVoucher(entry)) {
-    $('voucherMeta').textContent += '（PDF 无法直接预览，请点「下载凭证」查看）';
-    return;
-  }
+  $('voucherMeta').textContent = meta;
+  if (pdf) { $('voucherMeta').textContent = `${meta}（PDF 无法直接预览，请点「下载当前凭证」查看）`; return; }
   try {
-    image.src = await fetchVoucherUrl(entry);
-    image.alt = `凭证：${entry.project || entry.date}`;
+    image.src = await fetchVoucherUrl(attachment.id);
+    image.alt = `凭证：${voucherHost?.project || voucherHost?.date || ''}`;
     image.hidden = false;
   } catch (error) {
     if (handleAuth(error)) return;
     $('voucherMeta').textContent = `凭证加载失败：${error.message}`;
   }
+}
+async function stepVoucher(step) {
+  if (voucherList.length < 2) return;
+  await showVoucherAt((voucherIndex + step + voucherList.length) % voucherList.length);
 }
 function entryRow(entry) {
   const row = node('tr');
@@ -506,16 +540,23 @@ function openEditor(entry = null) {
   form.elements.namedItem('date').focus();
 }
 // ---------- 凭证：文件选择 / 拖拽 / 剪贴板粘贴（Ctrl+V 贴截图） ----------
+// 一条记录支持多张凭证（旧版被后端唯一索引限制成 1 张，多选会互相替换）。
 const ATTACHMENT_LIMIT = 3 * 1024 * 1024;
-// 当前待上传的凭证，来源可能是文件选择、拖拽或粘贴；null 表示本次不修改凭证。
-let selectedAttachment = null;
-let attachmentPreviewUrl = '';
+// 与后端 MAX_ATTACHMENTS_PER_REQUEST / MAX_ATTACHMENTS_PER_ENTRY 对齐
+const MAX_PENDING_ATTACHMENTS = 9;
+const MAX_ENTRY_ATTACHMENTS = 20;
+// 本次待上传的凭证（文件选择 / 拖拽 / 粘贴都往里追加，不再互相覆盖）。
+let selectedAttachments = [];
+// 编辑时被标记删除的已有凭证 id，保存后才真正删。
+let removedAttachmentIds = [];
+let attachmentSeq = 0;
+const attachmentUrls = new Map();  // 预览用 objectURL，重绘时回收
 const attachmentZone = $('attachmentZone');
 const attachmentInput = $('entryAttachment');
 const attachmentIdle = $('attachmentIdle');
 const attachmentPreview = $('attachmentPreview');
-const attachmentPreviewImg = $('attachmentPreviewImg');
 const attachmentClearBtn = $('attachmentClearBtn');
+const attachmentExisting = $('attachmentExisting');
 function timestamp() {
   const now = new Date();
   const pad = value => String(value).padStart(2, '0');
@@ -544,34 +585,92 @@ async function sniffFormat(file) {
   return '';
 }
 function attachmentHintText() {
-  if (selectedAttachment) {
-    const replacing = editing && editing.attachmentId ? '保存后将替换原凭证' : '保存后随记录一并提交';
-    return `待上传凭证：${selectedAttachment.name}（${formatBytes(selectedAttachment.size)}），${replacing}。`;
+  const parts = [];
+  if (selectedAttachments.length) parts.push(`待上传凭证：${selectedAttachments.map(item => item.file.name).join('、')}（共 ${selectedAttachments.length} 张，保存后一并提交）`);
+  const kept = editing ? entryAttachments(editing).filter(item => !removedAttachmentIds.includes(item.id)) : [];
+  if (editing && entryAttachments(editing).length) parts.push(`原有 ${entryAttachments(editing).length} 张，保存后保留 ${kept.length} 张${removedAttachmentIds.length ? `、删除 ${removedAttachmentIds.length} 张` : ''}`);
+  parts.push(`一条记录最多 ${MAX_ENTRY_ATTACHMENTS} 张，本次最多再选 ${MAX_PENDING_ATTACHMENTS} 张`);
+  return `${parts.join('；')}。`;
+}
+// 一张待上传凭证的预览行（图片给缩略图，PDF 给格式标记）。
+function attachmentItemNode(item, index) {
+  const wrap = node('div', undefined, 'ledger-attach-item');
+  if (item.ext === 'pdf') {
+    wrap.append(node('span', 'PDF', 'ledger-attach-thumb ledger-attach-thumb-pdf'));
+  } else {
+    const url = URL.createObjectURL(item.file);
+    attachmentUrls.set(item.key, url);
+    const image = node('img', undefined, 'ledger-attach-thumb');
+    image.src = url;
+    image.alt = `凭证预览 ${index + 1}`;
+    wrap.append(image);
   }
-  if (editing && editing.attachmentId) return `当前凭证：${editing.attachmentName}。不选择文件将保留原凭证；粘贴截图或选择新文件将替换。`;
-  return '可选；支持 PDF / PNG / JPEG（其他图片格式会自动转换），超过 3 MiB 会自动压缩。可直接 Ctrl / ⌘ + V 粘贴截图。';
+  const meta = node('div', undefined, 'ledger-attach-meta');
+  meta.append(
+    node('strong', item.file.name, 'ledger-attach-name'),
+    node('span', `${formatBytes(item.file.size)}${item.note ? ` · ${item.note}` : ''}`, 'ledger-attach-size')
+  );
+  wrap.append(meta, removedButton(`移除 ${item.file.name}`, () => {
+    if (saving) return;
+    selectedAttachments = selectedAttachments.filter(entry => entry.key !== item.key);
+    refreshAttachmentView();
+  }));
+  return wrap;
+}
+function removedButton(label, handler) {
+  const button = node('button', '×', 'ledger-attach-remove');
+  button.type = 'button';
+  button.setAttribute('aria-label', label);
+  button.addEventListener('click', handler);
+  return button;
+}
+// 编辑已有记录时：列出这条记录现有的凭证，可以逐张标记删除（保存后生效）。
+function refreshExistingView() {
+  const existing = editing ? entryAttachments(editing) : [];
+  const kept = existing.filter(item => !removedAttachmentIds.includes(item.id));
+  attachmentExisting.replaceChildren();
+  if (!existing.length) { attachmentExisting.hidden = true; return; }
+  attachmentExisting.hidden = false;
+  attachmentExisting.append(node('span', `该记录已有凭证 ${existing.length} 张，保存后保留 ${kept.length} 张：`, 'ledger-attach-existing-label'));
+  const row = node('div', undefined, 'ledger-attach-existing-list');
+  for (const item of kept) {
+    const chip = node('span', undefined, 'ledger-attach-chip');
+    chip.append(node('span', item.name || `凭证 ${item.id}`));
+    chip.append(removedButton(`删除已有凭证 ${item.name || item.id}`, () => {
+      if (saving) return;
+      if (!removedAttachmentIds.includes(item.id)) removedAttachmentIds.push(item.id);
+      refreshAttachmentView();
+      $('formStatus').textContent = `已标记删除 ${removedAttachmentIds.length} 张已有凭证，保存后生效。`;
+    }));
+    row.append(chip);
+  }
+  for (const id of removedAttachmentIds) {
+    const chip = node('span', undefined, 'ledger-attach-chip is-removed');
+    chip.append(node('span', `待删除 #${id}`));
+    chip.append(removedButton(`撤销删除 #${id}`, () => {
+      if (saving) return;
+      removedAttachmentIds = removedAttachmentIds.filter(value => value !== id);
+      refreshAttachmentView();
+    }));
+    row.append(chip);
+  }
+  attachmentExisting.append(row);
 }
 function refreshAttachmentView() {
-  const ready = Boolean(selectedAttachment);
+  const ready = selectedAttachments.length > 0;
   attachmentIdle.hidden = ready;
   attachmentPreview.hidden = !ready;
   attachmentClearBtn.hidden = !ready;
-  if (attachmentPreviewUrl) { URL.revokeObjectURL(attachmentPreviewUrl); attachmentPreviewUrl = ''; }
-  attachmentPreviewImg.removeAttribute('src');
-  attachmentPreviewImg.hidden = true;
-  if (ready) {
-    $('attachmentName').textContent = selectedAttachment.name;
-    $('attachmentSize').textContent = formatBytes(selectedAttachment.size);
-    if (/^image\//i.test(selectedAttachment.type)) {
-      attachmentPreviewUrl = URL.createObjectURL(selectedAttachment);
-      attachmentPreviewImg.src = attachmentPreviewUrl;
-      attachmentPreviewImg.hidden = false;
-    }
-  }
+  for (const url of attachmentUrls.values()) URL.revokeObjectURL(url);
+  attachmentUrls.clear();
+  attachmentPreview.replaceChildren(...selectedAttachments.map(attachmentItemNode));
+  attachmentClearBtn.textContent = selectedAttachments.length > 1 ? `清空已选凭证（${selectedAttachments.length}）` : '移除已选凭证';
+  refreshExistingView();
   $('attachmentHint').textContent = attachmentHintText();
 }
 function clearAttachment() {
-  selectedAttachment = null;
+  selectedAttachments = [];
+  removedAttachmentIds = [];
   attachmentInput.value = '';
   refreshAttachmentView();
 }
@@ -583,9 +682,20 @@ function clearAttachment() {
 async function tryShrink(file, options) {
   try { return await shrinkImageToLimit(file, ATTACHMENT_LIMIT, options); } catch { return null; }
 }
-function blobToNamedFile(blob, ext) {
+function blobToNamedFile(blob, ext, name) {
   const type = ext === 'pdf' ? 'application/pdf' : ext === 'jpg' ? 'image/jpeg' : 'image/png';
-  return namedFile(blob, `凭证-${timestamp()}.${ext}`, type);
+  return namedFile(blob, name || `凭证-${timestamp()}.${ext}`, type);
+}
+// 一次选/粘多张时，时间戳只到秒，文件名会撞车；撞车就补 -2 / -3，方便在列表里区分。
+function uniqueAttachmentName(name) {
+  const used = new Set(selectedAttachments.map(item => item.file.name));
+  if (!used.has(name)) return name;
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  let index = 2;
+  while (used.has(`${base}-${index}${ext}`)) index += 1;
+  return `${base}-${index}${ext}`;
 }
 // 返回 { file, ext, note } —— note 是给用户看的「做了什么处理」。
 async function prepareAttachment(file, detected) {
@@ -612,14 +722,21 @@ async function prepareAttachment(file, detected) {
     : `${formatBytes(file.size)}（已自动转为 JPEG）`;
   return { file: blobToNamedFile(shrunk, 'jpg'), ext: 'jpg', note };
 }
+// 追加一张凭证（不再覆盖上一张）：校验 → 压缩/转换 → 按真实内容命名 → 进列表。
+// renameByContent 用于粘贴/拖拽（文件名不可信，常为 image.png）。
 async function acceptAttachment(file, renameByContent) {
+  if (selectedAttachments.length >= MAX_PENDING_ATTACHMENTS) {
+    $('formStatus').textContent = `本次最多再上传 ${MAX_PENDING_ATTACHMENTS} 张凭证，请先保存或移除几张。`;
+    return false;
+  }
   try {
     if (!file || !file.size) throw new Error('凭证不能为空。');
     const detected = await sniffFormat(file);
     const prepared = await prepareAttachment(file, detected);
     const expected = prepared.ext === 'jpg' ? /\.jpe?g$/i : new RegExp(`\\.${prepared.ext}$`, 'i');
     const keepName = prepared.file === file && !renameByContent && expected.test(String(file.name || ''));
-    selectedAttachment = keepName ? file : blobToNamedFile(prepared.file, prepared.ext);
+    const stored = keepName ? file : blobToNamedFile(prepared.file, prepared.ext, uniqueAttachmentName(`凭证-${timestamp()}.${prepared.ext}`));
+    selectedAttachments.push({ key: `attachment-${++attachmentSeq}`, file: stored, ext: prepared.ext, note: prepared.note });
     refreshAttachmentView();
     $('formStatus').textContent = prepared.note ? `凭证已就绪：${prepared.note}。` : '';
     return true;
@@ -628,13 +745,19 @@ async function acceptAttachment(file, renameByContent) {
     return false;
   }
 }
-// 从粘贴/拖拽数据里挑第一个可能受支持的凭证文件。
+// 多选 / 多张拖拽 / 一次粘贴多张：逐张追加，单张失败不影响其它。
+async function acceptAttachments(files, renameByContent) {
+  let accepted = 0;
+  for (const file of [...files]) if (await acceptAttachment(file, renameByContent)) accepted += 1;
+  return accepted;
+}
+// 从粘贴/拖拽数据里挑出所有可能受支持的凭证文件。
 // 图片类型（含 WebP / HEIC / GIF / BMP 等）会交给后续的自动转换处理；PDF 直接放行。
 function pickClipboardFile(data) {
   const direct = [...(data.files || [])];
   const items = [...(data.items || [])].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean);
   const all = direct.length ? direct : items;
-  const usable = all.find(candidate => /^image\//i.test(candidate.type || '') || /^application\/pdf$/i.test(candidate.type || '') || !candidate.type);
+  const usable = all.filter(candidate => /^image\//i.test(candidate.type || '') || /^application\/pdf$/i.test(candidate.type || '') || !candidate.type);
   return { all, usable };
 }
 async function encodeAttachment(file) {
@@ -664,14 +787,17 @@ async function saveEntry(event) {
     return;
   }
   if (editing) payload.version = editing.version;
-  const file = selectedAttachment;
   saving = true;
   $('saveBtn').disabled = true;
   $('cancelBtn').disabled = true;
   $('formStatus').textContent = '正在保存，请勿关闭页面…';
   let saved = false;
   try {
-    if (file) payload.attachment = await encodeAttachment(file);
+    if (selectedAttachments.length) {
+      payload.attachments = [];
+      for (const item of selectedAttachments) payload.attachments.push(await encodeAttachment(item.file));
+    }
+    if (removedAttachmentIds.length) payload.removeAttachmentIds = [...removedAttachmentIds];
     await api(editing ? `${endpoint}/${encodeURIComponent(editing.id)}` : endpoint, {
       method: editing ? 'PUT' : 'POST', body: JSON.stringify(payload)
     });
@@ -693,11 +819,11 @@ async function saveEntry(event) {
     $('cancelBtn').disabled = false;
   }
 }
-async function downloadAttachment(entry, button) {
-  if (!user) return;
+async function downloadAttachment(attachment, button) {
+  if (!user || !attachment) return;
   button.disabled = true;
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}/attachments/${encodeURIComponent(entry.attachmentId)}`, { credentials: 'include', cache: 'no-store' });
+    const response = await fetch(`${API_BASE_URL}${endpoint}/attachments/${encodeURIComponent(attachment.id)}`, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       throw Object.assign(new Error(payload.message || '下载失败'), { status: response.status, code: payload.code });
@@ -705,7 +831,7 @@ async function downloadAttachment(entry, button) {
     const url = URL.createObjectURL(await response.blob());
     const link = node('a');
     link.href = url;
-    link.download = entry.attachmentName || '凭证';
+    link.download = attachment.name || '凭证';
     document.body.append(link);
     link.click();
     link.remove();
@@ -752,15 +878,25 @@ dialog.addEventListener('cancel', event => {
   event.preventDefault();
   closeDialogAnimated(dialog);
 });
-// 凭证大图弹窗
+// 凭证大图弹窗（一条记录多张凭证时可在弹窗里左右翻）
 $('voucherCloseBtn').addEventListener('click', () => closeDialogAnimated($('voucherDialog')));
-$('voucherDownloadBtn').addEventListener('click', event => { if (voucherEntry) downloadAttachment(voucherEntry, event.currentTarget); });
+$('voucherPrevBtn').addEventListener('click', () => stepVoucher(-1));
+$('voucherNextBtn').addEventListener('click', () => stepVoucher(1));
+$('voucherDownloadBtn').addEventListener('click', event => downloadAttachment(voucherCurrent, event.currentTarget));
 $('voucherDialog').addEventListener('cancel', event => { event.preventDefault(); closeDialogAnimated($('voucherDialog')); });
+document.addEventListener('keydown', event => {
+  if (!$('voucherDialog').open || voucherList.length < 2) return;
+  if (event.key === 'ArrowLeft') stepVoucher(-1);
+  if (event.key === 'ArrowRight') stepVoucher(1);
+});
 form.addEventListener('submit', saveEntry);
-// 凭证录入：点击 / 按钮选文件、拖拽、以及 Ctrl+V 直接粘贴截图（微信、钉钉、截图工具均可）。
+// 凭证录入：点击 / 按钮选文件（支持多选）、拖拽多张、以及 Ctrl+V 直接粘贴截图（微信、钉钉、截图工具均可）。
 $('attachmentPickBtn').addEventListener('click', () => { if (!saving) attachmentInput.click(); });
 attachmentZone.addEventListener('click', event => {
   if (saving || event.target === attachmentInput) return;
+  // 点预览行里的「×」时不要顺带弹出文件选择框
+  const target = event.target;
+  if (target && (typeof target.closest === 'function' ? target.closest('.ledger-attach-remove') : target.classList?.contains('ledger-attach-remove'))) return;
   attachmentInput.click();
 });
 attachmentZone.addEventListener('keydown', event => {
@@ -769,9 +905,9 @@ attachmentZone.addEventListener('keydown', event => {
 });
 attachmentClearBtn.addEventListener('click', () => { if (!saving) clearAttachment(); });
 attachmentInput.addEventListener('change', async () => {
-  const picked = attachmentInput.files && attachmentInput.files[0];
-  if (picked) await acceptAttachment(picked, false);
-  else if (!selectedAttachment) clearAttachment();
+  const picked = attachmentInput.files ? [...attachmentInput.files] : [];
+  if (picked.length) await acceptAttachments(picked, false);
+  else if (!selectedAttachments.length) clearAttachment();
 });
 attachmentZone.addEventListener('dragover', event => {
   if (saving) return;
@@ -783,21 +919,23 @@ attachmentZone.addEventListener('drop', async event => {
   attachmentZone.classList.remove('ledger-attach-active');
   if (saving) return;
   event.preventDefault();
-  const dropped = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
-  if (dropped) await acceptAttachment(dropped, true);
+  const dropped = event.dataTransfer && event.dataTransfer.files ? [...event.dataTransfer.files] : [];
+  if (dropped.length) await acceptAttachments(dropped, true);
 });
 // 仅在弹窗打开时接管粘贴，且只在剪贴板里确实有凭证图片/PDF 时才 preventDefault：
-// 往「说明」「备注」里粘贴纯文本、从 Excel 粘贴表格都不受影响。
+// 往「说明」「备注」里粘贴纯文本、从 Excel 粘贴表格都不受影响。一次粘贴多张会全部收下。
 document.addEventListener('paste', async event => {
   if (!dialog.open || saving || !event.clipboardData) return;
   const { all, usable } = pickClipboardFile(event.clipboardData);
   if (!all.length) return;
   event.preventDefault();
-  if (!usable) {
+  if (!usable.length) {
     $('formStatus').textContent = '剪贴板里的文件不是受支持的凭证格式：请粘贴图片截图，或改用「选择文件」上传 PDF。';
     return;
   }
-  await acceptAttachment(usable, true);
+  const accepted = await acceptAttachments(usable, true);
+  // 只提醒「有文件因为格式被忽略」，不要盖掉单张载入失败的提示（如超出 3 MiB）。
+  if (usable.length < all.length) $('formStatus').textContent = `已收下 ${accepted} 张，忽略 ${all.length - usable.length} 个不受支持的文件。`;
 });
 $('logoutBtn').addEventListener('click', async () => {
   try { await logout(); } catch (error) { if (!handleAuth(error)) status(`退出失败：${error.message}`, true); }

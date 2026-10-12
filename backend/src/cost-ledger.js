@@ -43,6 +43,34 @@ export function validateAttachment(input) {
   if (!mime) throw fail('仅接受文件格式匹配的 PDF、PNG、JPEG 凭证。');
   return { name, mime, buffer };
 }
+// 一条记录可以挂多张凭证（原来被 uk_cost_attachment_entry 唯一索引限制成 1 张，
+// 导致「手动新增时只能传一个、多张互相替换」）。这里给个上限，防止单条记录无限膨胀。
+export const MAX_ATTACHMENTS_PER_ENTRY = 20;
+export const MAX_ATTACHMENTS_PER_REQUEST = 9;
+/**
+ * 解析本次请求对凭证的意图：
+ *  - attachments: [...]          → 追加（配合 removeAttachmentIds 做删除）
+ *  - attachment:  {...}          → 兼容旧前端：整条记录的凭证被这一张替换
+ *  - removeAttachmentIds: [...]  → 删除指定凭证（可单独使用）
+ */
+export function attachmentPlan(body = {}) {
+  let mode = 'none';
+  let items = [];
+  if (body.attachments !== undefined && body.attachments !== null) {
+    if (!Array.isArray(body.attachments) || body.attachments.length > MAX_ATTACHMENTS_PER_REQUEST) throw fail(`一次最多上传 ${MAX_ATTACHMENTS_PER_REQUEST} 个凭证。`);
+    items = body.attachments.map(validateAttachment);
+    mode = 'append';
+  } else if (body.attachment !== undefined && body.attachment !== null) {
+    items = [validateAttachment(body.attachment)];
+    mode = 'replace';
+  }
+  let removeIds = [];
+  if (body.removeAttachmentIds !== undefined && body.removeAttachmentIds !== null) {
+    if (!Array.isArray(body.removeAttachmentIds) || body.removeAttachmentIds.length > MAX_ATTACHMENTS_PER_ENTRY || body.removeAttachmentIds.some(id => !validId(String(id)))) throw fail('要删除的凭证列表无效。');
+    removeIds = [...new Set(body.removeAttachmentIds.map(String))];
+  }
+  return { mode, items, removeIds };
+}
 export async function initCostLedger(db) {
   await db.query(`CREATE TABLE IF NOT EXISTS cost_entries (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -60,19 +88,51 @@ export async function initCostLedger(db) {
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, entry_id BIGINT UNSIGNED NOT NULL,
     filename VARCHAR(160) NOT NULL, mime VARCHAR(80) NOT NULL, content MEDIUMBLOB NOT NULL,
     uploaded_by BIGINT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_cost_attachment_entry (entry_id),
+    KEY idx_cost_attachment_entry (entry_id),
     CONSTRAINT fk_cost_attachment_entry FOREIGN KEY (entry_id) REFERENCES cost_entries(id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  // 老库上还留着「一条记录只能一个凭证」的唯一索引，迁移时去掉，改成普通索引。
+  const indexes = await db.query(`SHOW INDEX FROM cost_attachments WHERE Key_name='uk_cost_attachment_entry'`);
+  const legacy = Array.isArray(indexes) && Array.isArray(indexes[0]) ? indexes[0] : [];
+  if (legacy.length) await db.query('ALTER TABLE cost_attachments DROP INDEX uk_cost_attachment_entry, ADD KEY idx_cost_attachment_entry (entry_id)');
 }
+// 列表用相关子查询取凭证，而不是 LEFT JOIN：一条记录多张凭证时 JOIN 会把记录本身复制成多行。
+const attachmentColumns = `(SELECT CAST(a.id AS CHAR) FROM cost_attachments a WHERE a.entry_id=e.id ORDER BY a.id LIMIT 1) AS attachmentId,
+  (SELECT a.filename FROM cost_attachments a WHERE a.entry_id=e.id ORDER BY a.id LIMIT 1) AS attachmentName,
+  (SELECT COUNT(*) FROM cost_attachments a WHERE a.entry_id=e.id) AS attachmentCount,
+  (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', CAST(a.id AS CHAR), 'name', a.filename, 'mime', a.mime)) FROM cost_attachments a WHERE a.entry_id=e.id) AS attachmentsJson`;
 const selectEntries = `SELECT CAST(e.id AS CHAR) AS id, DATE_FORMAT(e.cost_date, '%Y-%m-%d') AS date,
   e.project, e.category, e.description, CAST(e.amount_cents AS CHAR) AS amountCents,
   e.payment_status AS paymentStatus, e.handler, e.notes,
   CAST(e.created_by AS CHAR) AS createdBy, e.created_by_name AS createdByName,
   CAST(e.updated_by AS CHAR) AS updatedBy, e.updated_by_name AS updatedByName,
   e.version, e.created_at AS createdAt, e.updated_at AS updatedAt,
-  CAST(a.id AS CHAR) AS attachmentId, a.filename AS attachmentName
-  FROM cost_entries e LEFT JOIN cost_attachments a ON a.entry_id=e.id`;
+  ${attachmentColumns}
+  FROM cost_entries e`;
 const validId = (id) => typeof id === 'string' && /^[1-9]\d{0,19}$/.test(id);
+const kindOf = (name, mime) => (/pdf/i.test(String(mime || '')) || /\.pdf$/i.test(String(name || ''))) ? 'pdf' : 'image';
+// DB 行 → 前端要的形状：把凭证列表统一成 attachments 数组，同时保留 attachmentId/Name（首个）向后兼容。
+export function shapeEntryRow(row) {
+  if (!row) return row;
+  const shaped = { ...row };
+  delete shaped.attachmentsJson;
+  let list = [];
+  if (Array.isArray(row.attachmentsJson)) list = row.attachmentsJson;
+  else if (typeof row.attachmentsJson === 'string' && row.attachmentsJson) {
+    try { const parsed = JSON.parse(row.attachmentsJson); if (Array.isArray(parsed)) list = parsed; } catch { list = []; }
+  }
+  let attachments = list
+    .filter(item => item && item.id)
+    .map(item => ({ id: String(item.id), name: String(item.name ?? ''), kind: kindOf(item.name, item.mime) }))
+    .sort((a, b) => Number(a.id) - Number(b.id));
+  if (!attachments.length && shaped.attachmentId) {
+    attachments = [{ id: String(shaped.attachmentId), name: String(shaped.attachmentName || ''), kind: kindOf(shaped.attachmentName, '') }];
+  }
+  shaped.attachments = attachments;
+  if (!shaped.attachmentId && attachments.length) { shaped.attachmentId = attachments[0].id; shaped.attachmentName = attachments[0].name; }
+  shaped.attachmentCount = Math.max(Number(shaped.attachmentCount) || 0, attachments.length);
+  return shaped;
+}
 export function createCostRouter({ db, requireLogin, requireAdmin, writeAudit = async () => {} }) {
   const router = express.Router();
   router.use(requireLogin, requireAdmin);
@@ -81,15 +141,45 @@ export function createCostRouter({ db, requireLogin, requireAdmin, writeAudit = 
   router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   const route = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
   router.get('/', route(async (req, res) => {
-    const [entries] = await db.query(`${selectEntries} ORDER BY e.cost_date DESC, e.id DESC`);
+    const [rows] = await db.query(`${selectEntries} ORDER BY e.cost_date DESC, e.id DESC`);
+    const entries = rows.map(shapeEntryRow);
     const now = new Date();
     const month = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     res.json({ok:true, entries, summary:summarize(entries, month), month});
   }));
+  // 把本次请求的「新增 / 删除凭证」落到库里。删除先做，再判上限，最后插入。
+  async function applyAttachmentPlan(connection, entryId, plan, actor) {
+    const [existing] = await connection.query('SELECT id FROM cost_attachments WHERE entry_id=? ORDER BY id',[entryId]);
+    const existingIds = existing.map(row => String(row.id));
+    let kept = existingIds;
+    if (plan.removeIds.length) {
+      const removable = plan.removeIds.filter(id => existingIds.includes(id));
+      if (removable.length) {
+        await connection.query(`DELETE FROM cost_attachments WHERE entry_id=? AND id IN (${removable.map(() => '?').join(',')})`,[entryId,...removable]);
+        kept = existingIds.filter(id => !removable.includes(id));
+      }
+    }
+    if (plan.mode === 'replace') {
+      const [file] = plan.items;
+      if (kept.length === 1) {
+        // 保持原行为：只替换内容、行 id 不变（凭证外链不会失效）。
+        await connection.query('UPDATE cost_attachments SET filename=?,mime=?,content=?,uploaded_by=?,created_at=CURRENT_TIMESTAMP WHERE id=?',[file.name,file.mime,file.buffer,actor.id,kept[0]]);
+        return;
+      }
+      if (kept.length) { await connection.query('DELETE FROM cost_attachments WHERE entry_id=?',[entryId]); kept = []; }
+    }
+    if (!plan.items.length) return;
+    if (kept.length + plan.items.length > MAX_ATTACHMENTS_PER_ENTRY) {
+      throw fail(`一条记录最多保留 ${MAX_ATTACHMENTS_PER_ENTRY} 个凭证（现有 ${kept.length} 个，本次再传 ${plan.items.length} 个会超限）。`);
+    }
+    for (const file of plan.items) {
+      await connection.query('INSERT INTO cost_attachments (entry_id,filename,mime,content,uploaded_by) VALUES (?,?,?,?,?)',[entryId,file.name,file.mime,file.buffer,actor.id]);
+    }
+  }
   async function save(req, res, updating) {
     const entry = validateEntry(req.body);
     if (updating && (!validId(req.params.id) || !Number.isSafeInteger(req.body.version) || req.body.version < 1)) throw fail('记录 ID 或版本无效。');
-    const attachment = req.body.attachment == null ? null : validateAttachment(req.body.attachment);
+    const plan = attachmentPlan(req.body);
     const actor = req.session.user;
     const actorName = String(actor.nick || actor.username || actor.id).slice(0,160);
     const connection = await db.getConnection();
@@ -108,11 +198,9 @@ export function createCostRouter({ db, requireLogin, requireAdmin, writeAudit = 
         const [result] = await connection.query(`INSERT INTO cost_entries (cost_date,project,category,description,amount_cents,payment_status,handler,notes,created_by,created_by_name,updated_by,updated_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [...values,actor.id,actorName,actor.id,actorName]);
         id = String(result.insertId);
       }
-      if (attachment) {
-        await connection.query(`INSERT INTO cost_attachments (entry_id,filename,mime,content,uploaded_by) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE filename=VALUES(filename),mime=VALUES(mime),content=VALUES(content),uploaded_by=VALUES(uploaded_by),created_at=CURRENT_TIMESTAMP`, [id,attachment.name,attachment.mime,attachment.buffer,actor.id]);
-      }
+      if (plan.mode !== 'none' || plan.removeIds.length) await applyAttachmentPlan(connection, id, plan, actor);
       const [rows] = await connection.query(`${selectEntries} WHERE e.id=?`,[id]);
-      saved = rows[0];
+      saved = shapeEntryRow(rows[0]);
       await connection.commit();
     } catch (error) { await connection.rollback(); throw error; }
     finally { connection.release(); }
@@ -121,6 +209,11 @@ export function createCostRouter({ db, requireLogin, requireAdmin, writeAudit = 
   }
   router.post('/', route((req,res) => save(req,res,false)));
   router.put('/:id', route((req,res) => save(req,res,true)));
+  router.get('/:id/attachments', route(async (req,res) => {
+    if (!validId(req.params.id)) throw fail('记录不存在。',404);
+    const [rows] = await db.query('SELECT CAST(id AS CHAR) AS id, filename AS name, mime FROM cost_attachments WHERE entry_id=? ORDER BY id',[req.params.id]);
+    res.json({ok:true, attachments: rows.map(row => ({ id: String(row.id), name: row.name, kind: kindOf(row.name, row.mime) }))});
+  }));
   router.get('/attachments/:id', route(async (req,res) => {
     if (!validId(req.params.id)) throw fail('附件不存在。',404);
     const [rows] = await db.query('SELECT filename,mime,content FROM cost_attachments WHERE id=?',[req.params.id]);

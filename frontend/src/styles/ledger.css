@@ -57,11 +57,23 @@
 .ledger-attach-idle{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;color:#65768b;font-size:13px;font-weight:400;text-align:center}
 .ledger-attach-idle .ledger-attach-icon{font-size:18px}
 .ledger-attach-idle kbd{padding:1px 6px;border:1px solid #cfdae5;border-bottom-width:2px;border-radius:5px;background:#fff;color:#43596f;font-size:12px;font-family:inherit}
-.ledger-attach-preview{display:flex;align-items:center;gap:14px;width:100%;min-width:0}
-.ledger-attach-preview img{width:80px;height:80px;flex:0 0 auto;object-fit:cover;border:1px solid #d8e1eb;border-radius:8px;background:#fff}
-.ledger-attach-meta{display:flex;flex-direction:column;gap:4px;min-width:0}
+.ledger-attach-preview{display:flex;flex-direction:column;gap:10px;width:100%;min-width:0}
+/* 一条待上传凭证一行：缩略图 + 文件名/体积 + 移除按钮。多张会自上而下排列，不再互相覆盖。 */
+.ledger-attach-item{display:flex;align-items:center;gap:14px;width:100%;min-width:0;box-sizing:border-box;padding:8px 10px;border:1px solid #e2eaf2;border-radius:10px;background:#fff}
+.ledger-attach-item img.ledger-attach-thumb{width:64px;height:64px;flex:0 0 auto;object-fit:cover;border:1px solid #d8e1eb;border-radius:8px;background:#fff}
+.ledger-attach-thumb-pdf{display:flex;align-items:center;justify-content:center;width:64px;height:64px;flex:0 0 auto;border:1px solid #d8e1eb;border-radius:8px;background:#f2f6fa;color:#5b7c99;font-size:13px;font-weight:600}
+.ledger-page .ledger-attach-remove{flex:0 0 auto;width:26px;height:26px;min-height:0;padding:0;border:1px solid #e3b4bb;border-radius:50%;background:#fff;color:#b3243a;font-size:14px;line-height:1;cursor:pointer}
+.ledger-page .ledger-attach-remove:hover{border-color:#c9414f;background:#fdeef0}
+.ledger-attach-meta{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 auto}
 .ledger-attach-meta strong{color:#1f3a52;font-size:13px;font-weight:600;overflow-wrap:anywhere}
 .ledger-attach-meta span{color:#718095;font-size:12px}
+/* 编辑已有记录时列出的现有凭证 */
+.ledger-attach-existing{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#65768b}
+.ledger-attach-existing-label{font-weight:600;color:#41556b}
+.ledger-attach-existing-list{display:flex;flex-wrap:wrap;gap:6px}
+.ledger-attach-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 4px 3px 10px;border:1px solid #d8e1eb;border-radius:999px;background:#f7fafc;overflow-wrap:anywhere}
+.ledger-attach-chip.is-removed{border-color:#e3b4bb;background:#fdeef0;color:#a2495a;text-decoration:line-through}
+.ledger-attach-chip .ledger-attach-remove{width:20px;height:20px;font-size:12px}
 .ledger-attach-bar{display:flex;align-items:center;gap:16px}
 .ledger-page .ledger-attach-bar .ledger-link{max-width:none;min-height:0;padding:0;border:0;background:transparent}
 .ledger-page .ledger-attach-idle[hidden],.ledger-page .ledger-attach-preview[hidden],.ledger-page .ledger-attach-bar button[hidden]{display:none}
@@ -71,6 +83,9 @@
 .ledger-page #categoryFieldHint{margin-top:6px;font-weight:400;color:#8ba7bf;overflow-wrap:anywhere}
 /* 凭证列：直接出图，点开看大图。 */
 .ledger-voucher{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.ledger-voucher-strip{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ledger-voucher-more{align-self:center;padding:2px 6px;border-radius:999px;background:#eef4f9;color:#5b7c99;font-size:11px}
+.ledger-page table .ledger-voucher-strip .ledger-voucher-thumb{width:64px;height:64px}
 .ledger-voucher-thumb{width:84px;height:84px;padding:0;min-height:0;border:1px solid #d8e1eb;border-radius:8px;background:#f5f8fb;cursor:zoom-in;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .ledger-voucher-thumb:hover{border-color:#7fc2d4;background:#eef7fa}
 .ledger-voucher-thumb img{width:100%;height:100%;object-fit:cover;display:block}
@@ -83,6 +98,10 @@
 .voucher-viewer h2{margin:0;font-size:18px}
 .voucher-viewer img{width:100%;max-height:64vh;object-fit:contain;border:1px solid #d8e1eb;border-radius:10px;background:#f5f8fb}
 .voucher-viewer .ledger-voucher-name{max-width:none;font-size:12px}
+.voucher-nav{display:flex;align-items:center;justify-content:center;gap:14px}
+.voucher-nav span{color:#718095;font-size:12px}
+.voucher-nav[hidden]{display:none}
+.ledger-attach-existing[hidden]{display:none}
 #voucherDialog{width:min(900px,calc(100vw - 32px))}
 /* ---------- 项目 / 类别 多选筛选（点概览里的条也能筛） ---------- */
 .ledger-filter-field{display:flex;flex-direction:column;gap:6px;color:#41556b;font-size:12px;font-weight:600;min-width:0}

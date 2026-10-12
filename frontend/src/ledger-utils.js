@@ -13,5 +13,5 @@ export function filterEntries(entries, filters = {}) {
     : (!filter || value === filter);
   return entries.filter(e => (!filters.month || e.date.startsWith(filters.month)) &&
     ['project', 'category', 'paymentStatus'].every(key => match(e[key], filters[key])) &&
-    (!query || [e.project,e.category,e.description,e.handler,e.notes,e.attachmentName,e.createdByName,e.updatedByName].join(' ').toLocaleLowerCase().includes(query)));
+    (!query || [e.project,e.category,e.description,e.handler,e.notes,e.attachmentName,...(Array.isArray(e.attachments) ? e.attachments.map(a => a?.name || '') : []),e.createdByName,e.updatedByName].join(' ').toLocaleLowerCase().includes(query)));
 }
