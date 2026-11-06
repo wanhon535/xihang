@@ -4,7 +4,7 @@ import {existsSync,readFileSync} from 'node:fs';
 test('ledger frontend exists and uses safe rendering, role guard and conflict protection',()=>{
  assert.ok(existsSync('frontend/src/pages/ledger.js'));
  const js=readFileSync('frontend/src/pages/ledger.js','utf8');
- assert.ok(js.includes("user.role !== 'admin'"));
+ assert.ok(js.includes("user.role === 'admin'")); // owner-or-admin edit guard, not an admin-only page gate
  assert.ok(js.includes('409'));
  assert.ok(js.includes('version'));
  assert.ok(!js.includes('innerHTML'));

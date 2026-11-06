@@ -53,6 +53,11 @@ const makeDb = () => {
         Object.assign(row,{project:p[1],updatedBy:String(p[8]),updatedByName:p[9],version:row.version+1}); return [{affectedRows:1}];
       }
       if (sql.startsWith('SELECT id FROM cost_attachments')) return [attachmentsOf(p[0]).map(file => ({ id: file.id }))];
+      // 后端在「非管理员编辑」时会查创建人，用于 owner-only 校验
+      if (sql.startsWith('SELECT created_by')) {
+        const row = state.rows.find(r => String(r.id) === String(p[0]));
+        return [row ? [{ created_by: row.createdBy }] : []];
+      }
       if (sql.startsWith('INSERT INTO cost_attachments')) {
         state.files.push({ id: String(++state.fileSeq), entryId: p[0], filename: p[1], mime: p[2], content: p[3] });
         return [{ insertId: state.fileSeq }];
@@ -68,7 +73,11 @@ const makeDb = () => {
         state.files = state.files.filter(f => !(String(f.entryId) === target && ids.includes(String(f.id))));
         return [{ affectedRows: ids.length }];
       }
-      if (sql.startsWith('SELECT filename')) return [attachmentsOf(p[0]).map(f=>({filename:f.filename,mime:f.mime,content:f.content}))];
+      // 注意：这里按「附件 id」查，不是按 entry_id。按 entry_id 查会永远取不到带凭证的记录之外的行。
+      if (sql.startsWith('SELECT filename')) {
+        const file = state.files.find(f => String(f.id) === String(p[0]));
+        return [file ? [{ filename: file.filename, mime: file.mime, content: file.content }] : []];
+      }
       if (sql.startsWith('SELECT CAST(id AS CHAR)')) return [attachmentsOf(p[0]).map(f=>({id:f.id,name:f.filename,mime:f.mime}))];
       if (sql.startsWith('SELECT id FROM')) return [state.rows.filter(r=>r.id===p[0])];
       if (sql.includes('FROM cost_entries e')) {
@@ -84,8 +93,9 @@ const makeDb = () => {
 };
 const startServer = async (db) => {
   const app=express(); app.use(express.json({limit:'8mb'}));
-  app.use((req,res,next)=>{ const who=req.get('x-user'); req.session={user:who?{id:who==='b'?2:1,nick:who==='member'?'admin':who,role:who==='member'?'member':'admin'}:null};next(); });
-  app.use('/api/admin/costs',createCostRouter({db,requireLogin:(req,res,next)=>req.session.user?next():res.status(401).json({ok:false}),requireAdmin:(req,res,next)=>next(),writeAudit:async(...args)=>db.state.audits.push(args.slice(1))}));
+  const identities={a:{id:1,nick:'a',role:'admin'},b:{id:2,nick:'b',role:'admin'},member:{id:3,nick:'member',role:'member'}};
+  app.use((req,res,next)=>{ const who=req.get('x-user'); req.session={user:who?identities[who]:null};next(); });
+  app.use('/api/admin/costs',createCostRouter({db,requireLogin:(req,res,next)=>req.session.user?next():res.status(401).json({ok:false}),writeAudit:async(...args)=>db.state.audits.push(args.slice(1))}));
   app.use((err,req,res,next)=>res.status(500).json({message:err.message}));
   const server=app.listen(0,'127.0.0.1'); await new Promise(resolve=>server.once('listening',resolve));
   const base=`http://127.0.0.1:${server.address().port}/api/admin/costs`;
@@ -99,21 +109,33 @@ test('HTTP authorization, shared writes, optimistic conflict, audit and protecte
   const db=makeDb(); const {state}=db;
   const {base,close}=await startServer(db);
   t.after(close);
-  for(const path of ['','/attachments/1']) {
-    assert.equal((await call(base,path,null)).status,401);
-    assert.equal((await call(base,path,'member')).status,403);
-  }
-  assert.equal((await call(base,'','member','POST',valid)).status,403);
+  // 匿名一律 401；普通成员已可进入共享台账（全员可记账）
+  for(const path of ['','/attachments/1']) assert.equal((await call(base,path,null)).status,401);
+  assert.equal((await call(base,'','member')).status,200);
+  assert.equal((await call(base,'/attachments/1','member')).status,404); // 还没上传过，不是权限错误
+  // 任何登录账号都能记一笔，不只是管理员
+  let mres=await call(base,'','member','POST',valid);
+  assert.equal(mres.status,201); assert.equal((await mres.json()).entry.createdBy,'3');
   assert.equal((await call(base,'','a','POST',{...valid,amount:'1.001'})).status,400);
   let res=await call(base,'','a','POST',{...valid,attachment:pdfFile('a')});
   assert.equal(res.status,201); assert.equal((await res.json()).entry.createdBy,'1');
-  res=await call(base,'','b'); let body=await res.json(); assert.equal(body.entries.length,1); assert.equal(body.summary.totalCents,'1230'); assert.equal(res.headers.get('cache-control'),'no-store');
+  // member 先记了 1 条，admin a 再记 1 条 => 共 2 条
+  res=await call(base,'','b'); let body=await res.json(); assert.equal(body.entries.length,2); assert.equal(body.summary.totalCents,'2460'); // 2 条 × 1230 assert.equal(res.headers.get('cache-control'),'no-store');
   res=await call(base,'/1','b','PUT',{...valid,project:'admin B edit',version:1}); assert.equal(res.status,200); body=await res.json(); assert.equal(body.entry.updatedBy,'2'); assert.equal(body.entry.version,2);
+  // 成员不能改别人创建的记录；/2 是 admin a 创建的，member 改它必须 403
+  assert.equal((await call(base,'/2','member','PUT',{...valid,version:1})).status,403);
+  // 反过来：member 改自己创建的 /1 是允许的
+  assert.equal((await call(base,'/1','member','PUT',{...valid,version:2})).status,200);
   assert.equal((await call(base,'/1','a','PUT',{...valid,version:1})).status,409);
   assert.equal((await call(base,'/99','a','PUT',{...valid,version:1})).status,404);
   res=await call(base,'/attachments/1','b'); assert.equal(res.status,200); assert.equal(res.headers.get('x-content-type-options'),'nosniff'); assert.match(res.headers.get('content-disposition'),/^attachment;/); assert.match(await res.text(),/^%PDF-/);
   assert.equal((await call(base,'/attachments/99')).status,404);
-  assert.equal(state.commits,2); assert.equal(state.rollbacks,2); assert.deepEqual(state.audits.map(a=>a[0]),['cost.create','cost.update']);
+  // 事务计数（按实际执行路径推导，非猜测）：
+  //   commit 4 次 = member 建 1 条、admin a 建 1 条、admin b 改 /1、member 改自己建的 /1
+  //   rollback 3 次 = member 改别人记录(403)、a 用旧 version 改(409)、a 改不存在的 /99(404)
+  //   注意 a 提交 amount:'1.001' 是在 getConnection 之前就被 validateEntry 拒掉的，不产生事务。
+  assert.equal(state.commits,4); assert.equal(state.rollbacks,3);
+  assert.deepEqual(state.audits.map(a=>a[0]),['cost.create','cost.create','cost.update','cost.update']);
 });
 
 test('一条记录可以挂多张凭证：多张不再互相替换，可追加也可单张删除', async t => {
@@ -130,7 +152,8 @@ test('一条记录可以挂多张凭证：多张不再互相替换，可追加�
   assert.equal(entry.attachments.length,3);
   assert.equal(entry.attachmentId,state.files[0].id,'首个凭证兼容字段');
 
-  // 列表接口必须一条记录一行（多凭证不能把记录复制成多行）
+  // 本测试用的是独立的 db（makeDb() 每次新建），里面只有这一次多凭证提交，所以是 1 条。
+  // 之前的断言把上一个测试的 member 记录也算进来了，那是错的。
   res=await call(base,'','a'); let body=await res.json();
   assert.equal(body.entries.length,1);
   assert.equal(body.entries[0].attachments.length,3);

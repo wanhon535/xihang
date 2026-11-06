@@ -21,8 +21,10 @@ async function loadCostSummary(db) {
 export function createDashboardRouter({ db, requireLogin, requireAdmin, listProjects }) {
   const router = express.Router();
   router.use(requireLogin, requireAdmin);
-  // Existing admin middleware has legacy nickname allowlists; this dashboard exposes
-  // company-wide cost figures, so require the persisted admin role like cost-ledger.js does.
+  // Existing admin middleware has legacy nickname allowlists; this dashboard
+  // aggregates company-wide cost totals (unlike the per-entry cost ledger,
+  // which is now shared with every account), so it stays on the persisted
+  // admin role check rather than the legacy nickname allowlist.
   router.use((req, res, next) => req.session.user.role === 'admin' ? next() : res.status(403).json({ ok: false, message: '仅管理员可访问数据大屏。' }));
   router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   const route = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
