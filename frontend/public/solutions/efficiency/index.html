@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>办公提效从哪开始：统一入口与 SSO 投入产出</title>
+<meta name="description" content="办公提效不是先买软件，而是先消灭「找系统、记密码、在后台之间来回切」的损耗。本文给出时间损耗的测算方法、统一应用入口与 SSO 的设计要点、三种 SSO 实现路线对比，以及一份可复算的投入产出示例。" />
+<meta name="keywords" content="办公提效,统一应用入口,SSO 单点登录,企业数字化办公,中小企业信息化,应用导航,星钥库,汐航,TideSail" />
+<link rel="canonical" href="https://xigouoa.xyz/solutions/efficiency/" />
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="汐航 TideSail" />
+<meta property="og:locale" content="zh_CN" />
+<meta property="og:title" content="办公提效从哪开始：统一应用入口与 SSO 的投入产出" />
+<meta property="og:description" content="时间损耗怎么算、统一入口怎么设计、SSO 三条路线怎么选——给中小企业一份可执行的办公提效起点。" />
+<meta property="og:url" content="https://xigouoa.xyz/solutions/efficiency/" />
+<meta property="og:image" content="https://xigouoa.xyz/og-image.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="办公提效从哪开始：统一入口与 SSO 投入产出" />
+<meta name="twitter:description" content="办公提效不是先买软件，而是先消灭「找系统、记密码、在后台之间来回切」的损耗。本文给出时间损耗的测算方法、统一应用入口与 SSO 的设计要点、三种 SSO 实现路线对比，以及一份可复算的投入产出示例。" />
+<meta name="twitter:image" content="https://xigouoa.xyz/og-image.png" />
+<meta name="theme-color" content="#0f7d8c" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="stylesheet" href="/site.css" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "首页", "item": "https://xigouoa.xyz/" },
+        { "@type": "ListItem", "position": 2, "name": "解决方案", "item": "https://xigouoa.xyz/solutions/efficiency/" },
+        { "@type": "ListItem", "position": 3, "name": "办公提效与统一入口", "item": "https://xigouoa.xyz/solutions/efficiency/" }
+      ]
+    },
+    {
+      "@type": "Article",
+      "headline": "办公提效从哪开始",
+      "description": "时间损耗测算方法、统一应用入口与 SSO 的设计要点、三种 SSO 实现路线对比，以及可复算的投入产出示例。",
+      "inLanguage": "zh-CN",
+      "datePublished": "2026-10-24",
+      "dateModified": "2026-10-24",
+      "mainEntityOfPage": { "@type": "WebPage", "@id": "https://xigouoa.xyz/solutions/efficiency/" },
+      "author": { "@type": "Organization", "name": "云南汐构信息技术有限公司", "url": "https://xigouoa.xyz/about/" },
+      "publisher": {
+        "@type": "Organization",
+        "name": "云南汐构信息技术有限公司",
+        "logo": {
+        "@type": "ImageObject",
+        "url": "https://xigouoa.xyz/brand/favicon-512.png",
+        "width": 512,
+        "height": 512
+      }
+      },
+      "about": ["办公提效", "统一应用入口", "SSO 单点登录", "企业数字化办公"]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "统一应用入口和门户网站有什么区别？",
+          "acceptedAnswer": { "@type": "Answer", "text": "门户通常是给外部看的展示页，统一应用入口是给内部员工用的工作台：它带身份认证、按岗位授权、能单点跳转到各业务系统，并且凭证集中托管。门户解决「介绍自己」，应用入口解决「开始工作」。" }
+        },
+        {
+          "@type": "Question",
+          "name": "SSO 单点登录一定要改造现有系统吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "不一定。若系统支持 OAuth2 / SAML / CAS，可以直接对接标准协议；不支持的老系统可以用凭证托管加自动填充的方式实现「一次登录、逐个直达」，改造量为零，代价是跳转时仍需系统自身校验一次账号。" }
+        },
+        {
+          "@type": "Question",
+          "name": "把系统密码集中托管安全吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "集中托管的安全性取决于三件事：传输与存储加密、按角色分配可见范围、操作留痕。相比「密码写在群公告或每个人的记事本里」，集中托管加权限控制通常更安全，因为它把不可控的扩散变成了可审计的访问。" }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="汐航 TideSail 首页">
+      <span class="brand-mark" aria-hidden="true"><img src="/brand/icon-transparent-light-bg.png" alt="" width="100%" height="100%" style="object-fit:contain"></span>
+      <span class="brand-text"><b>汐航</b><small>TideSail</small></span>
+    </a>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="/#features">产品能力</a>
+      <a href="/solutions/oa/">OA 与审批</a>
+      <a href="/guide/oa-selection/">选型指南</a>
+      <a href="/guide/">内容中心</a>
+      <a href="/about/">关于我们</a>
+    </nav>
+    <a class="head-cta" href="/app">进入工作台</a>
+  </div>
+</header>
+
+<main>
+
+  <div class="article-head">
+    <div class="wrap">
+      <nav class="breadcrumb" aria-label="面包屑"><a href="/">首页</a><span>/</span><a href="/solutions/efficiency/">解决方案</a><span>/</span>办公提效与统一入口</nav>
+      <h1>办公提效从哪开始</h1>
+      <p class="hero-lead" style="max-width:760px">先算清时间损耗，再决定投多少：统一应用入口与 SSO 的设计要点、三种实现路线，以及一份可复算的投入产出示例。</p>
+      <div class="article-meta">
+        <span>云南汐构信息技术有限公司</span>
+        <span>更新于 2026-10-24</span>
+        <span>约 11 分钟阅读</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="article-body">
+    <div class="wrap">
+      <article class="prose">
+
+        <h2 id="s1">一、办公提效的损耗，藏在「切换」里</h2>
+        <p class="lead">时间管理里有个共识：真正拖慢人的不是任务本身，而是任务之间的切换。企业里的「切换」有四类，几乎每天都在发生。</p>
+        <div class="table-scroll"><table>
+          <thead><tr><th>损耗类型</th><th>典型场景</th><th>谁在承担</th></tr></thead>
+          <tbody>
+            <tr><td><strong>找人问入口</strong></td><td>「CRM 后台地址是多少」「那个报表系统谁有账号」</td><td>新人、跨部门协作方、行政</td></tr>
+            <tr><td><strong>找回密码 / 切换账号</strong></td><td>十几个系统十几套账号，忘记、被锁、找管理员重置</td><td>全员 + IT</td></tr>
+            <tr><td><strong>在系统间搬运数据</strong></td><td>审批结果手工抄进 Excel，支出再手工抄进另一张表</td><td>财务、项目负责人</td></tr>
+            <tr><td><strong>确认状态</strong></td><td>「批了吗」「发了吗」「到账了吗」</td><td>发起人 + 管理者</td></tr>
+          </tbody>
+        </table></div>
+        <p>这四类损耗有个共同点：<strong>单次很小，频率极高，且不产生任何业务价值</strong>。它们不会出现在任何人的 KPI 里，但会真实地吃掉一个团队 5%–15% 的有效工时。</p>
+
+        <h2 id="s2">二、先算一笔账，再决定投多少</h2>
+        <p>不要用「感觉效率低」来立项，用一个可以复算的公式。假设有一支 60 人的团队：</p>
+        <div class="table-scroll"><table>
+          <thead><tr><th>参数</th><th>取值（示例假设）</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>人数</td><td>60 人</td><td>全员，含非坐班岗位</td></tr>
+            <tr><td>人均每天花在找入口 / 登录 / 问状态</td><td>12 分钟</td><td>可从抽样访谈估算，只算纯损耗</td></tr>
+            <tr><td>每月工作日</td><td>21 天</td><td>—</td></tr>
+            <tr><td>人均小时人力成本</td><td>按企业实际值</td><td>建议用含社保的综合成本 ÷ 月工时</td></tr>
+          </tbody>
+        </table></div>
+        <p>按上述假设，每月损耗工时约为 <code>60 × 12 × 21 ÷ 60 = 252 小时</code>，相当于 <strong>1.5 个全职人力</strong>。如果统一入口能把这项损耗压掉一半，等于每月回收约 126 小时。</p>
+        <blockquote>
+          <p>请注意：上表是<strong>演示用的示例假设</strong>，不是对任何企业的效果承诺。真实测算请用你自己团队的抽样数据替换 12 分钟这个值——这个数字必须来自访谈或观察，不能拍脑袋。</p>
+        </blockquote>
+
+        <h2 id="s3">三、为什么「统一入口」是阻力最小的切口</h2>
+        <p>对比一下常见的三个提效切口：</p>
+        <div class="table-scroll"><table>
+          <thead><tr><th>切口</th><th>是否改变员工操作</th><th>见效周期</th><th>失败风险</th></tr></thead>
+          <tbody>
+            <tr><td>换掉现有业务系统</td><td>彻底改变，且要迁移数据</td><td>数月</td><td>高：习惯迁移失败、历史数据断层</td></tr>
+            <tr><td>重整审批流程</td><td>改变提单与审批方式</td><td>数周</td><td>中：涉及权责重新划分，容易卡在部门协调</td></tr>
+            <tr><td>先统一入口 + SSO</td><td>几乎不变：还是进原来的系统</td><td>数天</td><td>低：只增加一层导航，不动业务逻辑</td></tr>
+          </tbody>
+        </table></div>
+        <p>统一入口的价值在于它是「加法」而不是「替换」：不需要说服任何人放弃现有工具，只需要让他们少走两步路。这类项目的推广成本最低，也最容易拿到第一份正向反馈，为后续的审批、台账、知识库改造积累信用。</p>
+
+        <h2 id="s4">四、统一入口的设计要点</h2>
+
+        <h3>1. 按岗位分组，而不是按系统来源分组</h3>
+        <p>反例是「阿里云系 / 腾讯云系 / 自研」这种技术视角的分组——员工不关心系统是谁做的。正确做法是按职能：销售、项目交付、财务、行政、研发。同一个人可以属于多个组，但要能看到「我今天要用的」排在最前。</p>
+<figure class="article-figure">
+<img src="/img/workspace.webp" alt="汐航 TideSail 统一入口工作台，按分组陈列业务系统与内部办公入口" width="1200" height="1083" loading="lazy" decoding="async">
+<figcaption>统一入口的设计要点：分组、可搜索、每条入口都能直接跳转。</figcaption>
+</figure>
+
+
+        <h3>2. 搜索与标签是必需品，不是加分项</h3>
+        <p>系统超过 20 个之后，纯靠分组浏览就会失效。搜索要能命中名称、说明和标签，标签要写员工的语言（「报销」「开票」「看数据」），而不是系统的官方名。</p>
+
+        <h3>3. 权限跟着角色走</h3>
+        <p>入口本身就暴露了企业的系统结构，所以不能全员可见全部。按角色授权：谁能看到财务后台、谁只能看项目系统、谁能取用某条凭证。人员变动时改角色，不改条目。</p>
+
+        <h3>4. 凭证托管要能审计</h3>
+        <p>很多团队的「SSO」实际上是 Excel 里的密码表。集中托管至少要做到：加密存储、按权限取用、记录谁在什么时候查看了哪条凭证。做不到这三点，不如不上。</p>
+
+        <h2 id="s5">五、SSO 的三条实现路线</h2>
+        <div class="table-scroll"><table>
+          <thead><tr><th>路线</th><th>原理</th><th>适用</th><th>成本</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>标准协议对接</strong></td>
+              <td>系统支持 OAuth2 / OIDC / SAML / CAS，直接与统一身份提供方对接</td>
+              <td>自研系统、较新的 SaaS</td>
+              <td>需要各系统配合改造，按系统数量递增</td>
+            </tr>
+            <tr>
+              <td><strong>凭证托管 + 一次点击</strong></td>
+              <td>入口保管账号密码，点击时自动完成登录或填充</td>
+              <td>老旧系统、第三方后台无法改造</td>
+              <td>零改造，落地最快</td>
+            </tr>
+            <tr>
+              <td><strong>反向代理 + 会话注入</strong></td>
+              <td>所有访问经过代理层，由代理统一认证后再转发</td>
+              <td>有一定运维能力、系统集中在同一内网</td>
+              <td>架构复杂，排障成本高</td>
+            </tr>
+          </tbody>
+        </table></div>
+        <p>中小企业最务实的组合是<strong>「标准协议优先 + 凭证托管兜底」</strong>：能改的走标准协议，改不动的走托管。不要为了统一而追求「全部上 SAML」，那会让项目从两周变成两个季度。</p>
+
+        <h2 id="s6">六、落地顺序与验收标准</h2>
+        <ol>
+          <li><strong>盘点清单。</strong>列出全员在用的系统、账号归属、访问频率。这张表本身就是资产。</li>
+          <li><strong>先接高频。</strong>按访问频率取前 80% 的系统先上，低频的后续补。</li>
+          <li><strong>定角色。</strong>用现有组织架构映射角色，不要新造一套。</li>
+          <li><strong>灰度。</strong>选一个 10 人左右的部门试用两周，收集「还要问谁要入口」的反馈。</li>
+          <li><strong>验收看三个数：</strong>入口使用率（周活 / 总人数）、IT 收到的「找入口 / 重置密码」请求量、新人上手到能独立找到系统的时间。</li>
+        </ol>
+        <p>这三个数下降，说明入口真的在工作；只有登录数上涨而请求量不变，说明大家只是多开了一个页面。</p>
+
+        <h2 id="s7">七、汐航对应的能力</h2>
+        <ul>
+          <li><strong>统一应用入口：</strong>应用分组、搜索、标签、可见范围，成员登录后看到自己的系统清单。</li>
+          <li><strong>SSO 与凭证托管：</strong>星钥库集中管理各系统凭证，按权限取用，配合单点跳转。</li>
+          <li><strong>一个入口覆盖四类日常：</strong>入口、<a href="/solutions/oa/">审批</a>、<a href="/guide/cost-ledger/">成本台账</a>、知识库。</li>
+          <li><strong>对外 API：</strong>需要把入口数据接到自有系统时，可用带权限范围的令牌调用并留存日志。</li>
+        </ul>
+
+        <div class="faq" style="margin-top:34px">
+          <details open>
+            <summary>统一应用入口和门户网站有什么区别？</summary>
+            <div class="answer"><p>门户通常是给外部看的展示页，统一应用入口是给内部员工用的工作台：带身份认证、按岗位授权、能单点跳转到各业务系统，并且凭证集中托管。门户解决「介绍自己」，应用入口解决「开始工作」。</p></div>
+          </details>
+          <details>
+            <summary>SSO 单点登录一定要改造现有系统吗？</summary>
+            <div class="answer"><p>不一定。若系统支持 OAuth2 / SAML / CAS，可以直接对接标准协议；不支持的老系统可以用凭证托管加自动填充实现「一次登录、逐个直达」，改造量为零。</p></div>
+          </details>
+          <details>
+            <summary>把系统密码集中托管安全吗？</summary>
+            <div class="answer"><p>安全性取决于三件事：传输与存储加密、按角色分配可见范围、操作留痕。相比把密码写在群公告或记事本里，集中托管加权限控制通常更安全，因为它把不可控的扩散变成了可审计的访问。</p></div>
+          </details>
+        </div>
+
+        <h2 id="s8">八、继续阅读</h2>
+        <ul>
+          <li><a href="/guide/oa-selection/">中小企业 OA 系统选型指南</a>——把选型拆成可打分的维度。</li>
+          <li><a href="/solutions/oa/">审批流程线上化</a>——统一入口之后，下一步通常是审批。</li>
+          <li><a href="/guide/cost-ledger/">项目成本台账怎么记</a>——把「数据搬运」从财务身上拿走。</li>
+        </ul>
+
+      </article>
+
+      <aside class="aside-card">
+        <div class="card toc">
+          <h4>本文目录</h4>
+          <ol>
+            <li><a href="#s1">损耗藏在「切换」里</a></li>
+            <li><a href="#s2">先算一笔账</a></li>
+            <li><a href="#s3">阻力最小的切口</a></li>
+            <li><a href="#s4">统一入口设计要点</a></li>
+            <li><a href="#s5">SSO 三条路线</a></li>
+            <li><a href="#s6">落地顺序与验收</a></li>
+            <li><a href="#s7">汐航对应能力</a></li>
+          </ol>
+        </div>
+        <div class="card">
+          <h4>相关内容</h4>
+          <ul>
+            <li><a href="/guide/oa-selection/">OA 选型指南</a></li>
+            <li><a href="/solutions/oa/">审批流程线上化</a></li>
+            <li><a href="/guide/cost-ledger/">项目成本台账</a></li>
+          </ul>
+        </div>
+        <div class="card" style="background:linear-gradient(160deg,#f1fafc,#fff);border-color:#cfe7ee">
+          <h4>需要有人帮你判断？</h4>
+          <p style="font-size:13.5px;margin:0 0 10px;color:var(--body)">把现有系统清单和痛点发给我们，可以直接对照这份清单给建议。</p>
+          <a href="/about/" style="font-size:13px;font-weight:600">了解开通与联系方式 →</a>
+        </div>
+        <div class="card">
+          <h4>产品</h4>
+          <ul>
+            <li><a href="/">汐航 TideSail 首页</a></li>
+            <li><a href="/app">进入工作台</a></li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-top">
+      <div>
+        <a class="brand" href="/">
+          <span class="brand-mark" aria-hidden="true"><img src="/brand/icon-white.png" alt="" width="100%" height="100%" style="object-fit:contain"></span>
+          <span class="brand-text"><b>汐航</b><small>TideSail</small></span>
+        </a>
+        <p class="foot-desc">企业数字化办公效率中枢：统一应用入口、钉钉审批同步、项目成本台账、企业知识库。由云南汐构信息技术有限公司出品。</p>
+      </div>
+      <div class="foot-col">
+        <h4>产品</h4>
+        <ul>
+          <li><a href="/#features">核心能力</a></li>
+          <li><a href="/solutions/efficiency/">办公提效</a></li>
+          <li><a href="/solutions/oa/">OA 与审批线上化</a></li>
+          <li><a href="/guide/cost-ledger/">项目成本台账</a></li>
+        </ul>
+      </div>
+      <div class="foot-col">
+        <h4>资料</h4>
+        <ul>
+          <li><a href="/guide/oa-selection/">OA 选型指南</a></li>
+          <li><a href="/guide/">内容中心</a></li>
+          <li><a href="/about/">关于我们</a></li>
+          <li><a href="/login.html">登录 / 进入工作台</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <div class="beian">
+        <span>© 2026 云南汐构信息技术有限公司</span>
+        <span class="sep" aria-hidden="true">·</span>
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" title="工业和信息化部政务服务平台 · ICP/IP地址/域名信息备案管理系统">滇ICP备2026021477号-1</a>
+      </div>
+      <span>汐航 TideSail · 企业数字化办公效率中枢</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

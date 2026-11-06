@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>汐航 API 文档 - 汐航</title>
+    <meta name="description" content="汐航对外 REST API 文档：使用 API 令牌按模块读写汐航数据（星钥库 / 成本台账 / 工作台）。" />
+    <script src="/theme-bootstrap.js"></script>
+    <link rel="stylesheet" href="/src/styles/styles.css" />
+    <style>
+      .api-doc-page { max-width: 980px; margin: 0 auto; padding: 32px 20px 96px; }
+      .api-doc-header { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; }
+      .api-doc-page h1 { margin: 6px 0 8px; }
+      .api-doc-page h2 { margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(148, 163, 184, .25); font-size: 20px; }
+      .api-doc-page h3 { margin: 26px 0 10px; font-size: 16px; }
+      .api-doc-page p, .api-doc-page li { line-height: 1.75; }
+      .api-doc-page .muted { opacity: .72; font-size: 13px; }
+      .doc-card { border: 1px solid rgba(148, 163, 184, .22); border-radius: 12px; padding: 18px 20px; margin: 14px 0; background: rgba(148, 163, 184, .06); }
+      .doc-endpoint { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+      .doc-method { font-weight: 700; font-size: 12px; letter-spacing: .06em; padding: 3px 9px; border-radius: 6px; color: #0b1220; }
+      .doc-method.get { background: #7dd3fc; }
+      .doc-method.post { background: #86efac; }
+      .doc-method.put { background: #fcd34d; }
+      .doc-method.delete { background: #fca5a5; }
+      .doc-path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; word-break: break-all; }
+      .doc-scope { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, .45); }
+      .api-doc-page pre { position: relative; overflow-x: auto; padding: 14px 16px; border-radius: 10px; background: rgba(2, 6, 23, .82); color: #e2e8f0; font-size: 13px; line-height: 1.6; }
+      .api-doc-page code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .api-doc-page :not(pre) > code { padding: 2px 6px; border-radius: 5px; background: rgba(148, 163, 184, .2); font-size: 13px; }
+      .doc-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+      .doc-table th, .doc-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid rgba(148, 163, 184, .22); vertical-align: top; }
+      .doc-table th { font-size: 13px; opacity: .8; }
+      .doc-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0 4px; }
+      .doc-tab-btn { cursor: pointer; }
+      .doc-tab-panel[hidden] { display: none; }
+      .doc-callout { border-left: 3px solid #fbbf24; padding: 12px 16px; margin: 16px 0; background: rgba(251, 191, 36, .1); border-radius: 0 8px 8px 0; }
+      .doc-anchor-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      .doc-anchor-list a { font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, .35); text-decoration: none; }
+    </style>
+  
+    
+    <link rel="stylesheet" href="/src/styles/swiftui.css">
+    <link rel="stylesheet" href="/src/styles/control-fixes.css">
+    <link rel="stylesheet" href="/src/styles/brand-logo.css">
+</head>
+  <body class="console-page vben-shell">
+    <main class="api-doc-page">
+      <header class="api-doc-header">
+        <div>
+          <p class="eyebrow">TIDESAIL · API v1</p>
+          <h1>汐航 API 文档</h1>
+          <p class="muted">用 API 令牌让外部系统按模块读写汐航数据。本页无需登录即可查阅。</p>
+        </div>
+        <div class="row-actions">
+          <a class="plain-btn small" href="/api.html">前往 API 模块创建令牌</a>
+        </div>
+      </header>
+
+      <div class="doc-callout">
+        <b>需要令牌才能调用。</b>令牌在左侧菜单「API」模块中创建，可按「模块 → 权限」自由组合，<b>明文只在创建页面显示</b>，请立即保存到密码管理器。
+        令牌代表你本人，权限与你账号绑定，不要提交到代码仓库或发给他人。
+      </div>
+
+      <nav class="doc-anchor-list">
+        <a href="#base">基础地址</a>
+        <a href="#auth">鉴权</a>
+        <a href="#scopes">权限范围</a>
+        <a href="#endpoints">接口列表</a>
+        <a href="#fields">字段说明</a>
+        <a href="#errors">错误码</a>
+        <a href="#limits">限流与安全</a>
+      </nav>
+
+      <h2 id="base">基础地址</h2>
+      <p>所有接口都以 <code>/api/v1/vault</code> 开头，拼接在汐航站点地址之后。例如本站的地址是：</p>
+      <pre><code>http://42.193.159.241:9988/api/v1/vault</code></pre>
+      <p class="muted">下文示例统一使用 <code>$BASE</code> 代表该前缀：</p>
+      <pre><code>export BASE="http://42.193.159.241:9988/api/v1/vault"
+export TOKEN="xh_vault_你的令牌"</code></pre>
+
+      <h2 id="auth">鉴权</h2>
+      <p>在请求头中携带 Bearer 令牌。缺少、格式错误、已吊销或已过期的令牌一律返回 <code>401</code>。</p>
+      <pre><code>Authorization: Bearer xh_vault_xxxxxxxxxxxxxxxxxxxxxxxx</code></pre>
+      <p>请求与响应均为 JSON，带 <code>Content-Type: application/json</code>。所有成功响应都包含 <code>"ok": true</code>。</p>
+
+      <h2 id="scopes">权限范围</h2>
+      <p>权限按「<b>模块 → 模块下的权限</b>」两级组织。创建令牌时自由勾选，遵循最小权限原则；权限不足时接口返回 <code>403</code>。</p>
+
+      <h3>星钥库（<code>vault</code>）</h3>
+      <table class="doc-table">
+        <thead><tr><th>权限</th><th>含义</th><th>可调用的接口</th></tr></thead>
+        <tbody>
+          <tr><td><code>vault:read</code></td><td>读取凭证记录（不含密码明文）</td><td>列表、详情</td></tr>
+          <tr><td><code>vault:secret</code></td><td>读取密码明文（高风险）</td><td>读取密钥</td></tr>
+          <tr><td><code>vault:write</code></td><td>新增、修改、删除凭证（高风险）</td><td>创建、更新、删除</td></tr>
+        </tbody>
+      </table>
+
+      <h3>成本台账（<code>ledger</code>）</h3>
+      <table class="doc-table">
+        <thead><tr><th>权限</th><th>含义</th></tr></thead>
+        <tbody>
+          <tr><td><code>ledger:read</code></td><td>查看成本记录与项目</td></tr>
+          <tr><td><code>ledger:write</code></td><td>新增、修改、删除成本记录</td></tr>
+          <tr><td><code>ledger:export</code></td><td>导出成本数据</td></tr>
+        </tbody>
+      </table>
+
+      <h3>工作台（<code>workspace</code>）</h3>
+      <table class="doc-table">
+        <thead><tr><th>权限</th><th>含义</th></tr></thead>
+        <tbody>
+          <tr><td><code>workspace:read</code></td><td>读取工作台站点与偏好</td></tr>
+          <tr><td><code>workspace:write</code></td><td>修改工作台站点与偏好</td></tr>
+        </tbody>
+      </table>
+
+      <h3>管理中枢（<code>admin</code>）· 仅管理员</h3>
+      <table class="doc-table">
+        <thead><tr><th>权限</th><th>含义</th><th>授予者</th></tr></thead>
+        <tbody>
+          <tr><td><code>admin:read</code></td><td>读取全站用户、审计与设置</td><td>仅管理员</td></tr>
+          <tr><td><code>admin:write</code></td><td>修改用户、设置与站点分组</td><td>仅管理员</td></tr>
+        </tbody>
+      </table>
+
+      <div class="doc-callout">
+        <b>管理员专属权限不会出现在普通用户的创建选项中。</b>即使通过接口强行提交，服务端也会以 <code>403</code> 拒绝，
+        返回「这些权限仅管理员可授予」。
+      </div>
+
+      <h2 id="endpoints">接口列表</h2>
+
+      <div class="doc-card">
+        <div class="doc-endpoint">
+          <span class="doc-method get">GET</span>
+          <span class="doc-path">/credentials</span>
+          <span class="doc-scope">vault:read</span>
+        </div>
+        <p>列出当前令牌所属账号的全部凭证。<b>不包含密码明文</b>。</p>
+        <pre><code>curl -H "Authorization: Bearer $TOKEN" "$BASE/credentials"</code></pre>
+        <pre><code>{
+  "ok": true,
+  "total": 2,
+  "credentials": [
+    {
+      "id": 12,
+      "title": "生产环境数据库",
+      "loginUsername": "app_ro",
+      "category": "基础设施",
+      "tags": ["线上", "只读"],
+      "isFavorite": true,
+      "url": "10.0.0.5",
+      "notes": "仅内网访问",
+      "createdAt": "2026-09-20T10:12:00.000Z",
+      "updatedAt": "2026-09-25T03:40:00.000Z"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="doc-card">
+        <div class="doc-endpoint">
+          <span class="doc-method get">GET</span>
+          <span class="doc-path">/credentials/:id</span>
+          <span class="doc-scope">vault:read</span>
+        </div>
+        <p>读取单条凭证详情，同样不含密码明文。</p>
+        <pre><code>curl -H "Authorization: Bearer $TOKEN" "$BASE/credentials/12"</code></pre>
+      </div>
+
+      <div class="doc-card">
+        <div class="doc-endpoint">
+          <span class="doc-method get">GET</span>
+          <span class="doc-path">/credentials/:id/secret</span>
+          <span class="doc-scope">vault:secret</span>
+        </div>
+        <p>解密并返回密码明文。请仅在确实需要时调用，避免写入日志。</p>
+        <pre><code>curl -H "Authorization: Bearer $TOKEN" "$BASE/credentials/12/secret"</code></pre>
+        <pre><code>{ "ok": true, "secret": { "id": 12, "title": "生产环境数据库", "password": "******" } }</code></pre>
+      </div>
+
+      <div class="doc-card">
+        <div class="doc-endpoint">
+          <span class="doc-method post">POST</span>
+          <span class="doc-path">/credentials</span>
+          <span class="doc-scope">vault:write</span>
+        </div>
+        <p>新增一条凭证。<code>title</code> 与 <code>password</code> 必填，密码最少 8 位。成功返回 <code>201</code>。</p>
+        <pre><code>curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "测试环境 Redis",
+    "loginUsername": "redis",
+    "password": "Str0ng!Passw0rd",
+    "category": "基础设施",
+    "tags": ["测试"],
+    "url": "10.0.0.9:6379",
+    "notes": "由外部系统自动创建",
+    "isFavorite": false
+  }' \
+  "$BASE/credentials"</code></pre>
+      </div>
+
+      <div class="doc-card">
+        <div class="doc-endpoint">
+          <span class="doc-method put">PUT</span>
+          <span class="doc-path">/credentials/:id</span>
+          <span class="doc-scope">vault:write</span>
+        </div>
+        <p>更新凭证。<b>不传 <code>password</code> 即保留原密码</b>，适合只改标题、标签等场景。</p>
+        <pre><code>curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "测试环境 Redis（已迁移）", "notes": "10.0.0.10" }' \
+  "$BASE/credentials/30"</code></pre>
+      </div>
+
+      <div class="doc-card">
+        <div class="doc-endpoint">
+          <span class="doc-method delete">DELETE</span>
+          <span class="doc-path">/credentials/:id</span>
+          <span class="doc-scope">vault:write</span>
+        </div>
+        <p>删除凭证。成功返回 <code>{"ok": true}</code>，记录不存在返回 <code>404</code>。</p>
+        <pre><code>curl -X DELETE -H "Authorization: Bearer $TOKEN" "$BASE/credentials/30"</code></pre>
+      </div>
+
+      <h2 id="fields">字段说明</h2>
+      <table class="doc-table">
+        <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><code>title</code></td><td>string</td><td>凭证名称。<b>创建时必填</b>。</td></tr>
+          <tr><td><code>loginUsername</code></td><td>string</td><td>登录账号。</td></tr>
+          <tr><td><code>password</code></td><td>string</td><td>密码明文，最少 8 位。写入后立即加密存储，读取时不会随列表返回。</td></tr>
+          <tr><td><code>category</code></td><td>string</td><td>所属项目或分类。</td></tr>
+          <tr><td><code>tags</code></td><td>string[]</td><td>标签，最多 12 个。</td></tr>
+          <tr><td><code>url</code></td><td>string</td><td>网址、IP 或内网地址。</td></tr>
+          <tr><td><code>notes</code></td><td>string</td><td>备注。</td></tr>
+          <tr><td><code>isFavorite</code></td><td>boolean</td><td>是否标记为常用。</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="errors">错误码</h2>
+      <table class="doc-table">
+        <thead><tr><th>状态码</th><th>含义</th><th>处理建议</th></tr></thead>
+        <tbody>
+          <tr><td><code>400</code></td><td>参数缺失或格式不正确</td><td>检查请求体字段，注意密码长度与标签数量限制。</td></tr>
+          <tr><td><code>401</code></td><td>令牌缺失、无效、已吊销或已过期</td><td>确认 <code>Authorization</code> 头格式，或重新创建令牌。</td></tr>
+          <tr><td><code>403</code></td><td>令牌权限不足</td><td>该操作需要的权限未授予，请重建令牌并勾选对应权限。</td></tr>
+          <tr><td><code>404</code></td><td>记录不存在</td><td>记录的 ID 有误，或不属于该令牌的账号。</td></tr>
+          <tr><td><code>429</code></td><td>请求过于频繁</td><td>降低调用频率，见下方限流说明。</td></tr>
+        </tbody>
+      </table>
+      <p>失败响应统一形如：</p>
+      <pre><code>{ "ok": false, "message": "记录不存在。" }</code></pre>
+
+      <h2 id="limits">限流与安全</h2>
+      <ul>
+        <li>常规接口每个令牌 <b>120 次/分钟</b>；读取密码明文接口 <b>60 次/分钟</b>。</li>
+        <li>令牌仅保存摘要，服务端无法还原明文。遗失请直接吊销并新建。</li>
+        <li>令牌只能访问<b>创建者本人</b>的凭证，账号之间互相隔离。</li>
+        <li>建议为每个外部系统单独建令牌，并只勾选该场景所需的最小权限。</li>
+        <li>把令牌放进环境变量或密钥管理服务，不要硬编码到前端代码或公开仓库。</li>
+      </ul>
+
+      <p class="muted" style="margin-top:40px">汐航 · 星钥库 API v1 · 本文档公开可访问，页面内容不含任何令牌或密码。</p>
+      <footer class="site-beian"><span>© 2026 云南汐构信息技术有限公司</span><span class="site-beian-sep" aria-hidden="true">·</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" title="工业和信息化部政务服务平台 · ICP/IP地址/域名信息备案管理系统">滇ICP备2026021477号-1</a></footer>
+    </main>
+  </body>
+</html>

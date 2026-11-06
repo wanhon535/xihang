@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="robots" content="noindex, follow" />
+    <meta name="description" content="汐航 TideSail 工作台。此页面需要登录后访问，不参与搜索引擎收录。" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>API - 汐航</title>
+    <script src="/theme-bootstrap.js"></script>
+    <link rel="stylesheet" href="/src/styles/styles.css" />
+    <link rel="stylesheet" href="/src/styles/admin-layout.css" />
+    <link rel="stylesheet" href="/src/styles/api-center.css" />
+  
+    
+    
+    <link rel="stylesheet" href="/src/styles/swiftui.css">
+    <link rel="stylesheet" href="/src/styles/control-fixes.css">
+    <link rel="stylesheet" href="/src/styles/brand-logo.css">
+</head>
+  <body class="console-page vben-shell api-center-page">
+    <aside class="side-rail" aria-label="主导航">
+      <a class="side-logo" href="/app" aria-label="汐航">
+        <span class="side-logo-mark"><img src="/brand/icon-white.png" alt="汐航" width="28" height="28"></span>
+        <strong>汐航</strong>
+      </a>
+      <nav class="side-nav">
+        <a href="/app"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6"/></svg></b><span>工作台</span></a>
+        <a href="/vault.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.5 12.5 8-8 2 2-2 2 2 2-3 3-2-2-2 2"/></svg></b><span>星钥库</span></a>
+        <a href="/apply.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h4"/></svg></b><span>申请中心</span></a><a class="active" href="/api.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5M15 7l5 5-5 5"/></svg></b><span>API</span></a>
+        <a class="admin-only hidden" href="/admin.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.3-8 10-4.6-1.7-8-5-8-10V6l8-3Z"/><path d="m9 12 2 2 4-4"/></svg></b><span>管理中枢</span></a>
+        <a class="admin-only hidden" href="/ledger.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></b><span>成本台账</span></a>
+      </nav>
+      <div class="rail-note">
+        <span id="accountName">-</span>
+        <small id="accountRole">-</small>
+      </div>
+    </aside>
+
+    <main class="console-main">
+      <header class="console-topbar">
+        <div>
+          <p class="eyebrow">DEVELOPER ACCESS</p>
+          <h1>API</h1>
+          <p class="topbar-subtitle">为外部系统签发访问令牌，按模块分配权限。</p>
+        </div>
+        <div class="console-user">
+          <span id="userName">-</span>
+          <button id="logoutBtn" type="button">退出</button>
+        </div>
+      </header>
+
+      <!-- 数据面板 -->
+      <section class="api-panel" id="apiStatsPanel">
+        <div class="api-panel-head">
+          <h2>数据面板</h2>
+          <div class="api-scope-switch hidden" id="statsScopeSwitch">
+            <button type="button" class="scope-btn active" data-scope="self">我的</button>
+            <button type="button" class="scope-btn" data-scope="all">全站</button>
+          </div>
+        </div>
+        <div class="api-stat-grid" id="apiStatGrid">
+          <article class="api-stat-card"><span>令牌总数</span><strong id="statTokenTotal">-</strong><small id="statTokenSub">-</small></article>
+          <article class="api-stat-card"><span>24 小时调用</span><strong id="statCalls24h">-</strong><small id="statCallsSub">-</small></article>
+          <article class="api-stat-card"><span>7 天调用</span><strong id="statCalls7d">-</strong><small id="statFailSub">-</small></article>
+          <article class="api-stat-card"><span>7 天失败率</span><strong id="statFailRate">-</strong><small>含 401 / 403 / 404</small></article>
+        </div>
+
+        <div class="api-stat-detail">
+          <section>
+            <h3>近 14 天调用趋势</h3>
+            <div id="apiTrendChart" class="api-trend-chart"><span class="muted">加载中…</span></div>
+          </section>
+          <section>
+            <h3>按模块分布</h3>
+            <div id="apiModuleBreakdown" class="api-module-breakdown"><span class="muted">加载中…</span></div>
+          </section>
+        </div>
+      </section>
+
+      <!-- 创建令牌 -->
+      <section class="api-panel">
+        <div class="api-panel-head">
+          <h2>创建令牌</h2>
+          <a class="plain-btn small" href="/api-docs.html" target="_blank" rel="noopener">查看 API 文档</a>
+        </div>
+
+        <form id="apiTokenForm" class="api-token-form">
+          <div class="api-form-row">
+            <label>
+              <span>令牌名称</span>
+              <input id="apiTokenNameInput" class="field-input" placeholder="例如：内部同步服务、报表系统" required />
+            </label>
+            <label>
+              <span>有效期</span>
+              <select id="apiTokenExpiryInput" class="field-input">
+                <option value="30">30 天</option>
+                <option value="90" selected>90 天（推荐）</option>
+                <option value="365">1 年</option>
+                <option value="0">永久有效（风险较高）</option>
+              </select>
+            </label>
+            <label class="admin-only hidden" id="apiTokenOwnerField">
+              <span>归属用户（管理员）</span>
+              <select id="apiTokenOwnerInput" class="field-input">
+                <option value="">我自己</option>
+              </select>
+            </label>
+          </div>
+
+          <fieldset class="api-permission-tree">
+            <legend>权限范围（按模块分配）</legend>
+            <div id="apiPermissionTree" class="api-perm-modules">
+              <p class="muted">正在加载权限列表…</p>
+            </div>
+          </fieldset>
+
+          <div class="form-actions">
+            <button id="createApiTokenBtn" class="primary-btn" type="submit">创建令牌</button>
+            <span id="apiTokenFormStatus" class="hint"></span>
+          </div>
+        </form>
+
+        <!-- 令牌明文展示：创建后保留在页面，可反复复制 -->
+        <section id="apiTokenReveal" class="api-token-reveal" hidden>
+          <div class="api-reveal-head">
+            <strong>令牌已创建，可随时复制</strong>
+            <small>出于安全考虑，明文只在当前页面保留，刷新或离开后无法再查看。</small>
+          </div>
+          <code id="apiTokenRevealValue" class="api-token-secret"></code>
+          <div class="form-actions">
+            <button id="copyApiTokenBtn" class="primary-btn" type="button">复制令牌</button>
+            <button id="apiTokenRevealCloseBtn" class="plain-btn" type="button">收起</button>
+            <span id="copyApiTokenStatus" class="hint"></span>
+          </div>
+        </section>
+      </section>
+
+      <!-- 令牌列表 -->
+      <section class="api-panel">
+        <div class="api-panel-head">
+          <h2>已有令牌</h2>
+          <div class="api-scope-switch hidden" id="tokenScopeSwitch">
+            <button type="button" class="scope-btn active" data-scope="self">我的</button>
+            <button type="button" class="scope-btn" data-scope="all">全站</button>
+          </div>
+        </div>
+        <div id="apiTokenList" class="api-token-list">
+          <div class="api-token-empty">正在加载令牌…</div>
+        </div>
+      </section>
+
+      <!-- 调用日志 -->
+      <section class="api-panel">
+        <div class="api-panel-head">
+          <h2>最近调用</h2>
+          <span class="muted" id="apiLogHint"></span>
+        </div>
+        <div class="api-log-table-wrap">
+          <table class="api-log-table">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th class="admin-only-col hidden">调用者</th>
+                <th>令牌</th>
+                <th>模块</th>
+                <th>方法</th>
+                <th>路径</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody id="apiLogBody">
+              <tr><td colspan="7" class="muted">正在加载…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <footer class="site-beian"><span>© 2026 云南汐构信息技术有限公司</span><span class="site-beian-sep" aria-hidden="true">·</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" title="工业和信息化部政务服务平台 · ICP/IP地址/域名信息备案管理系统">滇ICP备2026021477号-1</a></footer>
+    </main>
+
+    <script type="module" src="/src/pages/api-center.js"></script>
+  </body>
+</html>

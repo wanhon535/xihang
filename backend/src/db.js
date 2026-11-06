@@ -241,6 +241,45 @@ export async function initDatabase() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
+  // 星钥库对外 API 令牌：只存 sha256 摘要，明文仅在创建时返回一次。
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS api_tokens (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      user_id BIGINT UNSIGNED NOT NULL,
+      name VARCHAR(160) NOT NULL DEFAULT '',
+      token_hash CHAR(64) NOT NULL,
+      token_prefix VARCHAR(24) NOT NULL DEFAULT '',
+      scopes TEXT NULL,
+      last_used_at DATETIME NULL,
+      expires_at DATETIME NULL,
+      revoked_at DATETIME NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uk_api_tokens_hash (token_hash),
+      KEY idx_api_tokens_user (user_id, created_at),
+      CONSTRAINT fk_api_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS api_token_logs (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      token_id BIGINT UNSIGNED NULL,
+      user_id BIGINT UNSIGNED NULL,
+      module VARCHAR(40) NOT NULL DEFAULT '',
+      method VARCHAR(10) NOT NULL DEFAULT '',
+      path VARCHAR(255) NOT NULL DEFAULT '',
+      status_code INT NOT NULL DEFAULT 0,
+      ip VARCHAR(64) NOT NULL DEFAULT '',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_api_token_logs_token (token_id, created_at),
+      KEY idx_api_token_logs_user (user_id, created_at),
+      KEY idx_api_token_logs_created (created_at),
+      CONSTRAINT fk_api_token_logs_token FOREIGN KEY (token_id) REFERENCES api_tokens(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS system_settings (
       setting_key VARCHAR(80) NOT NULL,
@@ -566,6 +605,420 @@ export async function getPersonalCredentialSecret(userId, credentialId) {
     id: record.id,
     title: record.title,
     password: decryptVaultSecret(userId, record)
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 星钥库对外 API 令牌
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// API 令牌权限模型：模块 -> 模块下的权限
+// ---------------------------------------------------------------------------
+
+// 全站 API 模块与权限定义。前端「API」页面据此渲染权限树，后端据此校验。
+export const API_MODULES = [
+  {
+    key: 'vault',
+    label: '星钥库',
+    description: '个人项目凭证读写',
+    permissions: [
+      { key: 'vault:read', label: '读取记录', description: '列出凭证与详情，不含密码明文', risk: 'low' },
+      { key: 'vault:secret', label: '读取密码明文', description: '解密全部密码，权限最高', risk: 'high' },
+      { key: 'vault:write', label: '新增/修改/删除', description: '允许外部系统改动你的凭证', risk: 'medium' }
+    ]
+  },
+  {
+    key: 'ledger',
+    label: '成本台账',
+    description: '项目成本与收支记录',
+    permissions: [
+      { key: 'ledger:read', label: '读取台账', description: '查看成本台账记录与汇总', risk: 'low' },
+      { key: 'ledger:write', label: '登记成本', description: '新增、修改、删除成本记录', risk: 'medium' },
+      { key: 'ledger:export', label: '导出数据', description: '导出台账明细', risk: 'medium' }
+    ]
+  },
+  {
+    key: 'admin',
+    label: '管理中枢',
+    description: '成员、权限与系统配置',
+    permissions: [
+      { key: 'admin:read', label: '读取管理数据', description: '查看成员列表与系统概览', risk: 'medium' },
+      { key: 'admin:write', label: '修改管理配置', description: '改动成员与系统设置，权限极高', risk: 'critical' }
+    ]
+  },
+  {
+    key: 'workspace',
+    label: '工作台',
+    description: '首页待办与工作数据',
+    permissions: [
+      { key: 'workspace:read', label: '读取工作台', description: '查看工作台数据与待办', risk: 'low' },
+      { key: 'workspace:write', label: '更新工作台', description: '写入待办与工作数据', risk: 'medium' }
+    ]
+  }
+];
+
+const API_TOKEN_SCOPES_ALL = API_MODULES.flatMap((module) => module.permissions.map((p) => p.key));
+
+// 普通用户不可自助授予的高危权限，需管理员创建或审批。
+const API_TOKEN_ADMIN_ONLY_SCOPES = ['admin:read', 'admin:write'];
+
+export function listApiModules() {
+  return API_MODULES;
+}
+
+export function isAdminOnlyScope(scope) {
+  return API_TOKEN_ADMIN_ONLY_SCOPES.includes(String(scope || '').trim());
+}
+
+// 普通用户可申请的权限子集（剔除管理员专属）。
+export function listSelfServiceScopes() {
+  return API_TOKEN_SCOPES_ALL.filter((scope) => !isAdminOnlyScope(scope));
+}
+
+const API_TOKEN_SCOPES = API_TOKEN_SCOPES_ALL;
+
+
+function hashApiToken(plainToken) {
+  return crypto.createHash('sha256').update(String(plainToken)).digest('hex');
+}
+
+function normalizeApiTokenScopes(value) {
+  const scopes = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(/[,，\s]+/);
+
+  const cleaned = [...new Set(scopes.map((scope) => String(scope).trim()).filter(Boolean))].filter((scope) =>
+    API_TOKEN_SCOPES.includes(scope)
+  );
+
+  return cleaned.length > 0 ? cleaned : ['vault:read'];
+}
+
+function mapApiToken(row) {
+  return {
+    id: row.id,
+    name: row.name || '',
+    prefix: row.tokenPrefix || '',
+    scopes: parseTags(row.scopes),
+    lastUsedAt: row.lastUsedAt,
+    expiresAt: row.expiresAt,
+    revokedAt: row.revokedAt,
+    createdAt: row.createdAt
+  };
+}
+
+export async function createApiToken(userId, { name, scopes, expiresInDays } = {}) {
+  const plainToken = `xh_vault_${crypto.randomBytes(32).toString('hex')}`;
+  const days = Number(expiresInDays);
+  const expiresAt = Number.isFinite(days) && days > 0 ? new Date(Date.now() + Math.min(days, 3650) * 86400000) : null;
+  const db = getPool();
+
+  const [result] = await db.query(
+    `INSERT INTO api_tokens (user_id, name, token_hash, token_prefix, scopes, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      userId,
+      String(name || '').trim().slice(0, 160) || '未命名令牌',
+      hashApiToken(plainToken),
+      plainToken.slice(0, 16),
+      JSON.stringify(normalizeApiTokenScopes(scopes)),
+      expiresAt ? toMysqlDate(expiresAt) : null
+    ]
+  );
+
+  const [rows] = await db.query(
+    `SELECT id, name, token_prefix AS tokenPrefix, scopes, last_used_at AS lastUsedAt,
+       expires_at AS expiresAt, revoked_at AS revokedAt, created_at AS createdAt
+     FROM api_tokens WHERE id = ? LIMIT 1`,
+    [result.insertId]
+  );
+
+  return { token: plainToken, apiToken: mapApiToken(rows[0]) };
+}
+
+export async function listApiTokens(userId) {
+  const db = getPool();
+  const [rows] = await db.query(
+    `SELECT id, name, token_prefix AS tokenPrefix, scopes, last_used_at AS lastUsedAt,
+       expires_at AS expiresAt, revoked_at AS revokedAt, created_at AS createdAt
+     FROM api_tokens
+     WHERE user_id = ?
+     ORDER BY created_at DESC, id DESC`,
+    [userId]
+  );
+
+  return rows.map(mapApiToken);
+}
+
+export async function revokeApiToken(userId, tokenId) {
+  const db = getPool();
+  const [result] = await db.query(
+    'UPDATE api_tokens SET revoked_at = NOW() WHERE id = ? AND user_id = ? AND revoked_at IS NULL',
+    [tokenId, userId]
+  );
+
+  return result.affectedRows > 0;
+}
+
+export async function deleteApiToken(userId, tokenId) {
+  const db = getPool();
+  const [result] = await db.query('DELETE FROM api_tokens WHERE id = ? AND user_id = ?', [tokenId, userId]);
+
+  return result.affectedRows > 0;
+}
+
+// 返回持有该令牌的用户；令牌无效/过期/被吊销时返回 null。
+export async function resolveApiToken(plainToken) {
+  const token = String(plainToken || '').trim();
+  if (!token) {
+    return null;
+  }
+
+  const db = getPool();
+  const [rows] = await db.query(
+    `SELECT t.id AS tokenId, t.scopes, t.expires_at AS expiresAt, t.revoked_at AS revokedAt,
+       u.id, u.username, u.nick, u.role, u.status
+     FROM api_tokens t
+     JOIN users u ON u.id = t.user_id
+     WHERE t.token_hash = ?
+     LIMIT 1`,
+    [hashApiToken(token)]
+  );
+
+  const row = rows[0];
+  if (!row || row.revokedAt) {
+    return null;
+  }
+
+  if (row.expiresAt && new Date(row.expiresAt).getTime() < Date.now()) {
+    return null;
+  }
+
+  if (row.status === 'disabled') {
+    return null;
+  }
+
+  return {
+    tokenId: row.tokenId,
+    scopes: parseTags(row.scopes),
+    user: {
+      id: row.id,
+      username: row.username,
+      nick: row.nick,
+      role: row.role,
+      status: row.status
+    }
+  };
+}
+
+export async function touchApiTokenLastUsed(tokenId) {
+  const db = getPool();
+  await db.query('UPDATE api_tokens SET last_used_at = NOW() WHERE id = ?', [tokenId]);
+}
+
+// ---------------------------------------------------------------------------
+// API 令牌调用日志与统计
+// ---------------------------------------------------------------------------
+
+// 记录一次对外 API 调用。写入失败不应影响主流程。
+export async function recordApiTokenCall({ tokenId, userId, method, path, statusCode, ip } = {}) {
+  try {
+    const db = getPool();
+    const module = String(path || '').match(/\/api\/v\d+\/([a-z0-9_-]+)/i)?.[1] || '';
+    await db.query(
+      `INSERT INTO api_token_logs (token_id, user_id, module, method, path, status_code, ip)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        tokenId || null,
+        userId || null,
+        String(module).slice(0, 40),
+        String(method || '').slice(0, 10),
+        String(path || '').slice(0, 255),
+        Number(statusCode) || 0,
+        String(ip || '').slice(0, 64)
+      ]
+    );
+  } catch (error) {
+    console.warn(`[api-token] 记录调用日志失败：${error.message}`);
+  }
+}
+
+// 管理员视角：查看全站令牌（含创建者信息）。userId 为空时返回全部。
+export async function listAllApiTokens({ userId = null, limit = 500 } = {}) {
+  const db = getPool();
+  const params = [];
+  let where = '';
+  if (userId) {
+    where = 'WHERE t.user_id = ?';
+    params.push(userId);
+  }
+  params.push(Math.min(Number(limit) || 500, 2000));
+
+  const [rows] = await db.query(
+    `SELECT t.id, t.user_id AS userId, t.name, t.token_prefix AS tokenPrefix, t.scopes,
+       t.last_used_at AS lastUsedAt, t.expires_at AS expiresAt, t.revoked_at AS revokedAt,
+       t.created_at AS createdAt,
+       u.username AS ownerUsername, u.nick AS ownerNick, u.role AS ownerRole,
+       (SELECT COUNT(*) FROM api_token_logs l WHERE l.token_id = t.id) AS callCount
+     FROM api_tokens t
+     LEFT JOIN users u ON u.id = t.user_id
+     ${where}
+     ORDER BY t.created_at DESC, t.id DESC
+     LIMIT ?`,
+    params
+  );
+
+  return rows.map((row) => ({
+    ...mapApiToken(row),
+    userId: row.userId,
+    ownerUsername: row.ownerUsername || '',
+    ownerNick: row.ownerNick || '',
+    ownerRole: row.ownerRole || 'member',
+    callCount: Number(row.callCount) || 0
+  }));
+}
+
+// 单条令牌详情（管理员可查任意令牌，普通用户仅限自己的）。
+export async function getApiTokenById(tokenId, { ownerUserId = null } = {}) {
+  const tokens = await listAllApiTokens({ limit: 2000 });
+  const token = tokens.find((item) => Number(item.id) === Number(tokenId));
+  if (!token) return null;
+  if (ownerUserId && Number(token.userId) !== Number(ownerUserId)) return null;
+  return token;
+}
+
+// 最近的调用记录。ownerUserId 非空时只返回该用户的令牌调用。
+export async function listApiTokenLogs({ ownerUserId = null, tokenId = null, limit = 50 } = {}) {
+  const db = getPool();
+  const clauses = [];
+  const params = [];
+
+  if (tokenId) {
+    clauses.push('l.token_id = ?');
+    params.push(tokenId);
+  }
+  if (ownerUserId) {
+    clauses.push('l.user_id = ?');
+    params.push(ownerUserId);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  params.push(Math.min(Number(limit) || 50, 500));
+
+  const [rows] = await db.query(
+    `SELECT l.id, l.token_id AS tokenId, l.user_id AS userId, l.module, l.method, l.path,
+       l.status_code AS statusCode, l.ip, l.created_at AS createdAt,
+       t.name AS tokenName, u.nick AS ownerNick, u.username AS ownerUsername
+     FROM api_token_logs l
+     LEFT JOIN api_tokens t ON t.id = l.token_id
+     LEFT JOIN users u ON u.id = l.user_id
+     ${where}
+     ORDER BY l.created_at DESC, l.id DESC
+     LIMIT ?`,
+    params
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    tokenId: row.tokenId,
+    tokenName: row.tokenName || '(已删除令牌)',
+    userId: row.userId,
+    ownerNick: row.ownerNick || '',
+    ownerUsername: row.ownerUsername || '',
+    module: row.module || '',
+    method: row.method || '',
+    path: row.path || '',
+    statusCode: Number(row.statusCode) || 0,
+    ip: row.ip || '',
+    createdAt: row.createdAt
+  }));
+}
+
+// API 数据面板统计。ownerUserId 非空时统计该用户，否则统计全站。
+export async function getApiTokenStats({ ownerUserId = null } = {}) {
+  const db = getPool();
+  const tokenWhere = ownerUserId ? 'WHERE user_id = ?' : '';
+  const logWhere = ownerUserId ? 'WHERE user_id = ?' : '';
+  const tokenParams = ownerUserId ? [ownerUserId] : [];
+  const logParams = ownerUserId ? [ownerUserId] : [];
+
+  const [[tokenAgg]] = await db.query(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW()) THEN 1 ELSE 0 END) AS active,
+       SUM(CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END) AS revoked,
+       SUM(CASE WHEN revoked_at IS NULL AND expires_at IS NOT NULL AND expires_at <= NOW() THEN 1 ELSE 0 END) AS expired,
+       COUNT(DISTINCT user_id) AS owners
+     FROM api_tokens ${tokenWhere}`,
+    tokenParams
+  );
+
+  const [[logAgg]] = await db.query(
+    `SELECT
+       COUNT(*) AS callsTotal,
+       SUM(CASE WHEN created_at >= NOW() - INTERVAL 1 DAY THEN 1 ELSE 0 END) AS calls24h,
+       SUM(CASE WHEN created_at >= NOW() - INTERVAL 7 DAY THEN 1 ELSE 0 END) AS calls7d,
+       SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS callsFailed
+     FROM api_token_logs ${logWhere}`,
+    logParams
+  );
+
+  const [moduleRows] = await db.query(
+    `SELECT module, COUNT(*) AS calls
+     FROM api_token_logs ${logWhere}
+     GROUP BY module ORDER BY calls DESC LIMIT 12`,
+    logParams
+  );
+
+  // 近 14 天调用趋势，缺失日期补零，方便前端直接画图。
+  const [trendRows] = await db.query(
+    `SELECT DATE(created_at) AS day, COUNT(*) AS calls
+     FROM api_token_logs
+     WHERE created_at >= NOW() - INTERVAL 14 DAY ${ownerUserId ? 'AND user_id = ?' : ''}
+     GROUP BY DATE(created_at) ORDER BY day ASC`,
+    logParams
+  );
+
+  const trendMap = new Map(
+    trendRows.map((row) => [new Date(row.day).toISOString().slice(0, 10), Number(row.calls) || 0])
+  );
+  const trend = [];
+  for (let i = 13; i >= 0; i -= 1) {
+    const date = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    trend.push({ day: date, calls: trendMap.get(date) || 0 });
+  }
+
+  // 调用最活跃的令牌。
+  const [topRows] = await db.query(
+    `SELECT t.id, t.name, COUNT(l.id) AS calls
+     FROM api_tokens t
+     LEFT JOIN api_token_logs l ON l.token_id = t.id
+     ${ownerUserId ? 'WHERE t.user_id = ?' : ''}
+     GROUP BY t.id, t.name
+     ORDER BY calls DESC, t.id DESC
+     LIMIT 5`,
+    tokenParams
+  );
+
+  return {
+    tokens: {
+      total: Number(tokenAgg?.total) || 0,
+      active: Number(tokenAgg?.active) || 0,
+      revoked: Number(tokenAgg?.revoked) || 0,
+      expired: Number(tokenAgg?.expired) || 0,
+      owners: Number(tokenAgg?.owners) || 0
+    },
+    calls: {
+      total: Number(logAgg?.callsTotal) || 0,
+      last24h: Number(logAgg?.calls24h) || 0,
+      last7d: Number(logAgg?.calls7d) || 0,
+      failed: Number(logAgg?.callsFailed) || 0
+    },
+    byModule: moduleRows.map((row) => ({ module: row.module || '(未知)', calls: Number(row.calls) || 0 })),
+    trend,
+    topTokens: topRows.map((row) => ({ id: row.id, name: row.name || '', calls: Number(row.calls) || 0 }))
   };
 }
 
@@ -1090,6 +1543,60 @@ export async function findUserById(userId) {
   return rows[0] ? mapUser(rows[0]) : null;
 }
 
+// ---------------------------------------------------------------------------
+// Work numbers (工号)
+// ---------------------------------------------------------------------------
+// Every account gets a short, human-readable work number (xigou001, xigou002,
+// ...) assigned in order of arrival (created_at, then id). The work number IS
+// the `username` column, so it doubles as the password-login handle.
+//
+// DingTalk login is deliberately NOT affected: the OAuth path matches on
+// dingtalk_corp_id + dingtalk_userid (see findUserByDingTalkUserId) and never
+// looks at `username`. Changing a work number can therefore never lock anyone
+// out of QR-code login. The `ON DUPLICATE KEY UPDATE` clauses also never write
+// `username`, so an existing account's work number survives later logins.
+export const WORK_NUMBER_PREFIX = process.env.WORK_NUMBER_PREFIX || 'xigou';
+const WORK_NUMBER_START = Number(process.env.WORK_NUMBER_START || 1);
+const WORK_NUMBER_PAD = Number(process.env.WORK_NUMBER_PAD || 3);
+
+// Reserved names that must never be handed out as a work number, because they
+// would collide with the built-in local admin account.
+const RESERVED_USERNAMES = new Set(['admin']);
+
+function formatWorkNumber(seq) {
+  return `${WORK_NUMBER_PREFIX}${String(seq).padStart(WORK_NUMBER_PAD, '0')}`;
+}
+
+function parseWorkNumber(value) {
+  const match = new RegExp(`^${WORK_NUMBER_PREFIX}(\\d+)$`).exec(String(value || ''));
+  return match ? Number(match[1]) : 0;
+}
+
+// Next free work number = max(existing work numbers, start-1) + 1.
+// Anything that is not a well-formed work number (e.g. legacy `ding_xxx`
+// usernames, or the reserved `admin`) simply doesn't participate.
+export async function nextWorkNumber(db = getPool()) {
+  const [rows] = await db.query('SELECT username FROM users');
+  let maxSeq = WORK_NUMBER_START - 1;
+  for (const row of rows) {
+    const seq = parseWorkNumber(row.username);
+    if (seq > maxSeq) maxSeq = seq;
+  }
+  return formatWorkNumber(maxSeq + 1);
+}
+
+// Allocate a work number that is provably unused, retrying on the off chance of
+// a concurrent insert racing us to the same number.
+export async function allocateWorkNumber(db = getPool()) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const candidate = await nextWorkNumber(db);
+    if (RESERVED_USERNAMES.has(candidate.toLowerCase())) continue;
+    const [rows] = await db.query('SELECT 1 FROM users WHERE username = ? LIMIT 1', [candidate]);
+    if (rows.length === 0) return candidate;
+  }
+  throw new Error('无法分配工号：连续 100 次尝试均发生冲突。');
+}
+
 export async function findUserByUsername(username) {
   const db = getPool();
   const [rows] = await db.query('SELECT * FROM users WHERE username = ? LIMIT 1', [username]);
@@ -1102,12 +1609,18 @@ export async function touchUserLogin(userId) {
 }
 
 export async function upsertDingTalkUser(user, role = 'member') {
-  const username = createUsername(user);
   const password = createRandomPassword();
   const passwordHash = await bcrypt.hash(password, 10);
   const db = getPool();
   const dingTalkUserId = user.userid || user.userId || user.dingtalkUserId || '';
   const dingTalkCorpId = user.corpId || user.corp_id || '';
+
+  // Established accounts keep the work number they already have. Only a brand
+  // new account gets a freshly allocated one — and even then it is only used if
+  // the INSERT actually inserts (the upsert below never overwrites `username`,
+  // so a concurrent login can't hand the same number to two people).
+  const existing = await findUserForDingTalk(user);
+  const username = existing?.username || (await allocateWorkNumber(db));
 
   await db.query(
     `INSERT INTO users
@@ -1148,6 +1661,22 @@ export async function findUserByUnionId(unionid) {
   return rows[0] || null;
 }
 
+// Locate an existing account for an incoming DingTalk identity, trying the same
+// keys the login path uses (unionid first, then corp+userid). Returns null when
+// this person has never been seen before.
+export async function findUserForDingTalk(user = {}) {
+  if (user.unionid) {
+    const byUnionId = await findUserByUnionId(user.unionid);
+    if (byUnionId) return byUnionId;
+  }
+  const dingTalkUserId = user.userid || user.userId || user.dingtalkUserId || '';
+  const dingTalkCorpId = user.corpId || user.corp_id || '';
+  if (dingTalkUserId && dingTalkCorpId) {
+    return findUserByDingTalkUserId(dingTalkCorpId, dingTalkUserId);
+  }
+  return null;
+}
+
 export async function findUserByDingTalkUserId(corpId, userId) {
   const db = getPool();
   const [rows] = await db.query('SELECT * FROM users WHERE dingtalk_corp_id = ? AND dingtalk_userid = ? LIMIT 1', [
@@ -1163,10 +1692,13 @@ export async function findUserByDingTalkUserId(corpId, userId) {
 // an account an admin manually disabled. Unlike upsertDingTalkUser (the OAuth
 // login path), this never counts as a "login" and never overrides role.
 export async function upsertRosterUser({ dingtalkUserId, dingtalkCorpId, nick, unionid }) {
-  const username = createUsername({ unionid, userid: dingtalkUserId });
   const password = createRandomPassword();
   const passwordHash = await bcrypt.hash(password, 10);
   const db = getPool();
+
+  // Same rule as the OAuth path: existing accounts keep their work number.
+  const existing = await findUserForDingTalk({ unionid, userid: dingtalkUserId, corpId: dingtalkCorpId });
+  const username = existing?.username || (await allocateWorkNumber(db));
 
   await db.query(
     `INSERT INTO users
@@ -1849,23 +2381,10 @@ function toMysqlDate(value) {
   )}:${pad(value.getSeconds())}`;
 }
 
-function createUsername(user) {
-  if (user.unionid) {
-    return `ding_${user.unionid}`.slice(0, 120);
-  }
-
-  const dingTalkUserId = user.userid || user.userId || user.dingtalkUserId || '';
-  if (dingTalkUserId) {
-    const corpPart = String(user.corpId || user.corp_id || 'corp').replace(/[^a-zA-Z0-9_-]/g, '');
-    return `ding_${corpPart}_${dingTalkUserId}`.slice(0, 120);
-  }
-
-  if (user.openid) {
-    return `ding_${user.openid}`.slice(0, 120);
-  }
-
-  return String(user.nick || 'dingtalk_user').trim().slice(0, 120);
-}
+// NOTE: the old createUsername() helper (which minted unreadable `ding_<unionid>`
+// usernames) has been removed. New accounts are named by allocateWorkNumber()
+// instead. If you need to know which DingTalk identity an account belongs to,
+// read dingtalk_corp_id + dingtalk_userid / unionid — never parse `username`.
 
 function createRandomPassword() {
   return crypto.randomBytes(18).toString('base64url');

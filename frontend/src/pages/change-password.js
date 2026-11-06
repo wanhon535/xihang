@@ -29,7 +29,7 @@ form.addEventListener('submit', async (event) => {
       method: 'POST',
       body: JSON.stringify({ currentPassword, nextPassword })
     });
-    window.location.href = '/';
+    window.location.href = '/app';
   } catch (error) {
     showError(error.message);
   }
@@ -43,7 +43,7 @@ async function init() {
       return;
     }
     if (!payload.user.mustChangePassword) {
-      window.location.href = '/';
+      window.location.href = '/app';
     }
   } catch {
     redirectToLogin();

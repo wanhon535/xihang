@@ -19,15 +19,23 @@ import {
 } from './sms-service.js';
 import { createSmsGatewayAuth, gatewayConfigured } from './sms-auth.js';
 import {
+  APPLY_FORM_MAP,
+  buildOwnerCell,
+  createAitableRecord,
+  publicFormCatalog
+} from './dingtalk-aitable.js';
+import {
   changeOwnPassword,
   cleanExpiredSsoTickets,
   consumeSsoTicket,
   createAdminBackupSnapshot,
+  createApiToken,
   createLocalUser,
   createPersonalCredential,
   createProject,
   createSsoTicket,
   deletePersonalCredential,
+  deleteApiToken,
   deleteProject,
   deleteUser,
   disableStaleDingTalkUsers,
@@ -35,9 +43,17 @@ import {
   findUserById,
   findUserByUsername,
   getAdminOverview,
+  getApiTokenById,
+  getApiTokenStats,
   getDecryptedSystemSetting,
   getPool,
   getPersonalCredentialSecret,
+  isAdminOnlyScope,
+  listAllApiTokens,
+  listApiModules,
+  listApiTokenLogs,
+  listSelfServiceScopes,
+  recordApiTokenCall,
   getSiteGroups,
   getSiteGroupsForUser,
   getUserHomeLayout,
@@ -46,6 +62,7 @@ import {
   listAuditLogs,
   listDingTalkDocs,
   listPersonalCredentials,
+  listApiTokens,
   listProjects,
   listSystemSettings,
   listUsers,
@@ -53,6 +70,9 @@ import {
   replaceSiteGroups,
   recordAuditLog,
   resetUserPassword,
+  resolveApiToken,
+  revokeApiToken,
+  touchApiTokenLastUsed,
   touchUserLogin,
   updatePersonalCredential,
   updateProject,
@@ -650,6 +670,500 @@ app.get(
     }
 
     res.json({ ok: true, secret });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 星钥库对外 API（v1）—— Bearer Token 鉴权，供外部系统调用
+// ---------------------------------------------------------------------------
+
+const vaultApiRateLimit = rateLimit({
+  windowMs: 1000 * 60,
+  max: 120,
+  key: (req) => `vault-api:${req.apiTokenId || req.ip}`
+});
+
+function sendApiError(res, error) {
+  const message = error?.message || '请求处理失败。';
+  const isValidation = /不能为空|格式不正确|无效|超出/.test(message);
+  res.status(isValidation ? 400 : 500).json({ ok: false, message });
+}
+
+app.get('/api/v1/vault/credentials', requireApiToken('vault:read'), vaultApiRateLimit, async (req, res) => {
+  try {
+    const credentials = await listPersonalCredentials(req.apiUser.id);
+    res.json({ ok: true, credentials, total: credentials.length });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/v1/vault/credentials/:id', requireApiToken('vault:read'), vaultApiRateLimit, async (req, res) => {
+  try {
+    const credentialId = parsePositiveId(req.params.id);
+    if (!credentialId) {
+      res.status(400).json({ ok: false, message: '记录 ID 无效。' });
+      return;
+    }
+
+    const credentials = await listPersonalCredentials(req.apiUser.id);
+    const credential = credentials.find((item) => Number(item.id) === Number(credentialId));
+    if (!credential) {
+      res.status(404).json({ ok: false, message: '记录不存在。' });
+      return;
+    }
+
+    res.json({ ok: true, credential });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/v1/vault/credentials', requireApiToken('vault:write'), vaultApiRateLimit, async (req, res) => {
+  try {
+    const credential = await createPersonalCredential(req.apiUser.id, req.body);
+    res.status(201).json({ ok: true, credential });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.put('/api/v1/vault/credentials/:id', requireApiToken('vault:write'), vaultApiRateLimit, async (req, res) => {
+  try {
+    const credentialId = parsePositiveId(req.params.id);
+    if (!credentialId) {
+      res.status(400).json({ ok: false, message: '记录 ID 无效。' });
+      return;
+    }
+
+    const credential = await updatePersonalCredential(req.apiUser.id, credentialId, req.body);
+    if (!credential) {
+      res.status(404).json({ ok: false, message: '记录不存在。' });
+      return;
+    }
+
+    res.json({ ok: true, credential });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.delete('/api/v1/vault/credentials/:id', requireApiToken('vault:write'), vaultApiRateLimit, async (req, res) => {
+  try {
+    const credentialId = parsePositiveId(req.params.id);
+    if (!credentialId) {
+      res.status(400).json({ ok: false, message: '记录 ID 无效。' });
+      return;
+    }
+
+    const deleted = await deletePersonalCredential(req.apiUser.id, credentialId);
+    if (!deleted) {
+      res.status(404).json({ ok: false, message: '记录不存在。' });
+      return;
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/v1/vault/credentials/:id/secret', requireApiToken('vault:secret'), vaultApiRateLimit, async (req, res) => {
+  try {
+    const credentialId = parsePositiveId(req.params.id);
+    if (!credentialId) {
+      res.status(400).json({ ok: false, message: '记录 ID 无效。' });
+      return;
+    }
+
+    const secret = await getPersonalCredentialSecret(req.apiUser.id, credentialId);
+    if (!secret) {
+      res.status(404).json({ ok: false, message: '记录不存在。' });
+      return;
+    }
+
+    res.json({ ok: true, secret });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 申请中心：配置驱动的通用提交入口
+// 表单结构在 backend/src/dingtalk-aitable.js 的 APPLY_FORMS 里定义，
+// 这里只做「校验 → 拼 cells → 写钉钉 AI 表格」，不含任何单表硬编码。
+// 以后新增一类申请，只需往 APPLY_FORMS 追加一项，本文件无需改动。
+// ---------------------------------------------------------------------------
+
+class ValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+const FIELD_MAX = { text: 200, textarea: 1000 };
+
+function validateField(field, rawValue) {
+  const type = field.type;
+
+  // 可重复的金额明细：接受数组，也接受表单序列化后的 JSON 字符串
+  if (type === 'amountList') return validateAmountList(field, rawValue);
+
+  const text = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
+
+  if (type === 'owner') return undefined;
+
+  if (!text) {
+    if (field.required) throw new ValidationError(`${field.label}不能为空`);
+    return undefined;
+  }
+
+  if (type === 'select') {
+    const options = field.options || [];
+    if (!options.includes(text)) {
+      throw new ValidationError(`${field.label}只能是：${options.join(' / ')}`);
+    }
+    return text;
+  }
+
+  if (type === 'date') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00+08:00`))) {
+      throw new ValidationError(`${field.label}格式应为 YYYY-MM-DD`);
+    }
+    return text;
+  }
+
+  if (type === 'number') {
+    const num = Number(text);
+    if (!Number.isInteger(num) || num <= 0) throw new ValidationError(`${field.label}必须是正整数`);
+    if (num > 1000000) throw new ValidationError(`${field.label}数值过大`);
+    return num;
+  }
+
+  if (type === 'currency') {
+    const num = Number(text);
+    if (!Number.isFinite(num) || num < 0) throw new ValidationError(`${field.label}必须是不小于 0 的数字`);
+    if (num > 100000000) throw new ValidationError(`${field.label}数值过大`);
+    return num;
+  }
+
+  // text / textarea
+  const max = field.max || FIELD_MAX[type] || 500;
+  if (text.length > max) throw new ValidationError(`${field.label}不能超过 ${max} 个字符`);
+  return text;
+}
+
+/**
+ * 「可重复增加」的金额列表校验。
+ * 入参宽容：数组 / JSON 字符串 / 逗号分隔字符串都接受，输出统一成
+ * [{ label, amount }]，只保留金额有效的行。
+ */
+function validateAmountList(field, rawValue) {
+  const maxEntries = field.maxEntries || 30;
+  let list = rawValue;
+
+  if (typeof list === 'string') {
+    const trimmed = list.trim();
+    if (!trimmed) list = [];
+    else if (trimmed.startsWith('[')) {
+      try {
+        list = JSON.parse(trimmed);
+      } catch {
+        throw new ValidationError(`${field.label}格式不正确`);
+      }
+    } else {
+      list = trimmed.split(/[,，\n]/).map((amount) => ({ amount }));
+    }
+  }
+  if (list === null || list === undefined) list = [];
+  if (!Array.isArray(list)) throw new ValidationError(`${field.label}格式不正确`);
+  if (list.length > maxEntries) throw new ValidationError(`${field.label}最多填 ${maxEntries} 条`);
+
+  const cleaned = [];
+  list.forEach((item, index) => {
+    const rawAmount = typeof item === 'object' && item !== null ? item.amount : item;
+    if (rawAmount === null || rawAmount === undefined || String(rawAmount).trim() === '') return;
+    const amount = Number(String(rawAmount).replace(/[,¥￥\s]/g, ''));
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new ValidationError(`${field.label}第 ${index + 1} 条不是有效金额`);
+    }
+    if (amount > 100000000) throw new ValidationError(`${field.label}第 ${index + 1} 条数值过大`);
+    const label = typeof item === 'object' && item !== null ? String(item.label || '').trim().slice(0, 100) : '';
+    cleaned.push({ label, amount: Math.round(amount * 100) / 100 });
+  });
+
+  if (!cleaned.length) {
+    if (field.required) throw new ValidationError(`${field.label}至少填一条`);
+    return undefined;
+  }
+  return cleaned;
+}
+
+// 申请中心目录：当前登录人 + 所有可填表单（配置驱动，前端据此渲染卡片与表单）
+app.get('/api/apply/catalog', requireLogin, (req, res) => {
+  const user = req.session.user;
+  res.json({
+    ok: true,
+    isAdmin: isAdminUser(user),
+    applicant: {
+      id: user.id,
+      nick: user.nick || user.username,
+      canAssignOwner: Boolean(user.dingtalkUserId && user.dingtalkCorpId)
+    },
+    forms: publicFormCatalog()
+  });
+});
+
+// 通用提交：POST /api/apply/:key
+app.post('/api/apply/:key', requireLogin, async (req, res, next) => {
+  try {
+    const form = APPLY_FORM_MAP.get(String(req.params.key || ''));
+    if (!form) {
+      res.status(404).json({ ok: false, message: '没有这个申请类型' });
+      return;
+    }
+
+    const body = req.body || {};
+    const input = body.values && typeof body.values === 'object' ? body.values : body;
+
+    const cells = {};
+    for (const field of form.fields) {
+      const value = validateField(field, input[field.key]);
+      if (value === undefined) continue;
+
+      // 金额列表要落两个单元格：明细文本 + 自动合计
+      if (field.type === 'amountList') {
+        const detailId = form.table.fields[field.fieldId];
+        if (detailId) {
+          cells[detailId] = value
+            .map((item, index) => `${item.label || `第${index + 1}条`}：${item.amount}`)
+            .join('\n');
+        }
+        const totalId = form.table.fields[field.totalFieldId || 'amountTotal'];
+        if (totalId) {
+          cells[totalId] = Math.round(value.reduce((sum, item) => sum + item.amount, 0) * 100) / 100;
+        }
+        continue;
+      }
+
+      cells[form.table.fields[field.fieldId]] = value;
+    }
+
+    // 表格侧默认值（例如状态=正常，否则不会被到期提醒扫到）
+    for (const [fieldKey, value] of Object.entries(form.defaults || {})) {
+      const fieldId = form.table.fields[fieldKey];
+      if (fieldId && cells[fieldId] === undefined) cells[fieldId] = value;
+    }
+
+    // 负责人：取当前登录人的钉钉身份
+    const ownerField = form.fields.find((f) => f.type === 'owner');
+    const owner = buildOwnerCell(req.session.user);
+    if (ownerField && owner) {
+      cells[form.table.fields[ownerField.fieldId]] = owner;
+    }
+
+    // 备注：没钉钉身份的账号把申请人写进备注，避免「谁提的」查不到
+    const noteField = form.fields.find((f) => f.key === 'note');
+    if (noteField) {
+      const noteFieldId = form.table.fields[noteField.fieldId];
+      const parts = [];
+      if (cells[noteFieldId]) parts.push(String(cells[noteFieldId]));
+      if (ownerField && !owner) {
+        parts.push(`申请人：${req.session.user.nick || req.session.user.username}（该账号无钉钉身份，负责人请到表格内补填）`);
+      }
+      if (parts.length) cells[noteFieldId] = parts.join('｜');
+    }
+
+    const result = await createAitableRecord(form.table, cells);
+    res.status(201).json({
+      ok: true,
+      key: form.key,
+      recordId: result.recordId,
+      ownerAssigned: Boolean(owner && ownerField),
+      tableViewUrl: form.table.viewUrl
+    });
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      res.status(400).json({ ok: false, message: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// API 令牌自助管理（需登录会话）
+
+// 普通用户：只能管理自己创建的令牌，且不能授予管理员专属权限。
+// 管理员：可查看全站令牌、任意吊销，并授予全部权限。
+// ---------------------------------------------------------------------------
+
+const isAdminUser = (user) => String(user?.role || '') === 'admin';
+
+// 权限树 + 当前用户可申请范围，供前端渲染
+app.get('/api/api-center/catalog', requireLogin, (req, res) => {
+  const admin = isAdminUser(req.session.user);
+  res.json({
+    ok: true,
+    isAdmin: admin,
+    modules: listApiModules(),
+    selfServiceScopes: admin ? null : listSelfServiceScopes()
+  });
+});
+
+// 数据面板统计
+app.get('/api/api-center/stats', requireLogin, async (req, res, next) => {
+  try {
+    const admin = isAdminUser(req.session.user);
+    const scopeAll = String(req.query.scope || '') === 'all' && admin;
+    const stats = await getApiTokenStats({ ownerUserId: scopeAll ? null : req.session.user.id });
+    res.json({ ok: true, scope: scopeAll ? 'all' : 'self', isAdmin: admin, stats });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 令牌列表：管理员可传 scope=all 查看全站
+app.get('/api/api-center/tokens', requireLogin, async (req, res, next) => {
+  try {
+    const admin = isAdminUser(req.session.user);
+    const scopeAll = String(req.query.scope || '') === 'all' && admin;
+    const tokens = await listAllApiTokens({
+      userId: scopeAll ? null : req.session.user.id,
+      limit: 500
+    });
+    res.json({ ok: true, scope: scopeAll ? 'all' : 'self', isAdmin: admin, tokens });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 调用日志
+app.get('/api/api-center/logs', requireLogin, async (req, res, next) => {
+  try {
+    const admin = isAdminUser(req.session.user);
+    const scopeAll = String(req.query.scope || '') === 'all' && admin;
+    const logs = await listApiTokenLogs({
+      ownerUserId: scopeAll ? null : req.session.user.id,
+      limit: Number(req.query.limit) || 50
+    });
+    res.json({ ok: true, scope: scopeAll ? 'all' : 'self', logs });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 创建令牌
+app.post('/api/api-center/tokens', requireLogin, async (req, res, next) => {
+  try {
+    const admin = isAdminUser(req.session.user);
+    const requested = Array.isArray(req.body?.scopes) ? req.body.scopes.map((s) => String(s).trim()) : [];
+
+    // 普通用户不能授予管理员专属权限
+    const blocked = admin ? [] : requested.filter((scope) => isAdminOnlyScope(scope));
+    if (blocked.length > 0) {
+      res.status(403).json({
+        ok: false,
+        message: `这些权限仅管理员可授予：${blocked.join(', ')}。`
+      });
+      return;
+    }
+
+    // 管理员可为指定用户创建令牌
+    let ownerUserId = req.session.user.id;
+    if (admin && req.body?.userId) {
+      const targetId = parsePositiveId(req.body.userId);
+      if (!targetId) {
+        res.status(400).json({ ok: false, message: '目标用户 ID 无效。' });
+        return;
+      }
+      const target = await findUserById(targetId);
+      if (!target) {
+        res.status(404).json({ ok: false, message: '目标用户不存在。' });
+        return;
+      }
+      ownerUserId = targetId;
+    }
+
+    const created = await createApiToken(ownerUserId, {
+      name: req.body?.name,
+      scopes: requested,
+      expiresInDays: req.body?.expiresInDays
+    });
+
+    await writeAudit(
+      req,
+      'api_token.create',
+      'api_token',
+      String(created.apiToken.id),
+      `创建 API 令牌「${created.apiToken.name}」，权限：${created.apiToken.scopes.join(', ')}`
+    );
+
+    res.status(201).json({ ok: true, ...created });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 吊销令牌
+app.delete('/api/api-center/tokens/:id', requireLogin, async (req, res, next) => {
+  try {
+    const tokenId = parsePositiveId(req.params.id);
+    if (!tokenId) {
+      res.status(400).json({ ok: false, message: '令牌 ID 无效。' });
+      return;
+    }
+
+    const admin = isAdminUser(req.session.user);
+    // 管理员可吊销任意令牌；普通用户仅限自己的
+    const ownerUserId = admin ? null : req.session.user.id;
+    const target = await getApiTokenById(tokenId, ownerUserId ? { ownerUserId } : {});
+    if (!target) {
+      res.status(404).json({ ok: false, message: '令牌不存在或无权操作。' });
+      return;
+    }
+
+    const revoked = await revokeApiToken(target.userId, tokenId);
+    if (!revoked) {
+      res.status(404).json({ ok: false, message: '令牌不存在或已吊销。' });
+      return;
+    }
+
+    await writeAudit(req, 'api_token.revoke', 'api_token', String(tokenId), `吊销 API 令牌「${target.name}」`);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 彻底删除令牌
+app.delete('/api/api-center/tokens/:id/permanent', requireLogin, async (req, res, next) => {
+  try {
+    const tokenId = parsePositiveId(req.params.id);
+    if (!tokenId) {
+      res.status(400).json({ ok: false, message: '令牌 ID 无效。' });
+      return;
+    }
+
+    const admin = isAdminUser(req.session.user);
+    const ownerUserId = admin ? null : req.session.user.id;
+    const target = await getApiTokenById(tokenId, ownerUserId ? { ownerUserId } : {});
+    if (!target) {
+      res.status(404).json({ ok: false, message: '令牌不存在或无权操作。' });
+      return;
+    }
+
+    const deleted = await deleteApiToken(target.userId, tokenId);
+    if (!deleted) {
+      res.status(404).json({ ok: false, message: '令牌不存在。' });
+      return;
+    }
+
+    await writeAudit(req, 'api_token.delete', 'api_token', String(tokenId), `删除 API 令牌「${target.name}」`);
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -1409,6 +1923,73 @@ function requireAdmin(req, res, next) {
   }
 
   res.status(403).json({ ok: false, message: '没有后台权限。' });
+}
+
+// ---------------------------------------------------------------------------
+// 星钥库对外 API：Bearer Token 鉴权
+// ---------------------------------------------------------------------------
+
+function readApiToken(req) {
+  const header = String(req.get('authorization') || '').trim();
+  const match = header.match(/^Bearer\s+(.+)$/i);
+
+  if (match) {
+    return match[1].trim();
+  }
+
+  // 兼容 header 直传，方便 curl 调试。
+  return String(req.get('x-api-token') || '').trim();
+}
+
+function requireApiToken(...requiredScopes) {
+  return (req, res, next) => {
+    Promise.resolve()
+      .then(async () => {
+        const resolved = await resolveApiToken(readApiToken(req));
+
+        // 无论成功失败都记一笔调用日志，供数据面板统计与审计。
+        const logCall = (statusCode, tokenId, userId) => {
+          recordApiTokenCall({
+            tokenId: tokenId ?? null,
+            userId: userId ?? null,
+            method: req.method,
+            path: req.originalUrl || req.path,
+            statusCode,
+            ip: req.ip
+          }).catch(() => {});
+        };
+
+        if (!resolved) {
+          logCall(401, null, null);
+          res.status(401).json({ ok: false, message: 'API Token 无效、已过期或已吊销。' });
+          return;
+        }
+
+        const missing = requiredScopes.filter((scope) => !resolved.scopes.includes(scope));
+        if (missing.length > 0) {
+          logCall(403, resolved.tokenId, resolved.user.id);
+          res.status(403).json({
+            ok: false,
+            message: `API Token 缺少权限：${missing.join(', ')}。`,
+            requiredScopes
+          });
+          return;
+        }
+
+        req.apiUser = resolved.user;
+        req.apiTokenId = resolved.tokenId;
+        req.apiScopes = resolved.scopes;
+        touchApiTokenLastUsed(resolved.tokenId).catch(() => {});
+
+        // 响应结束后按真实状态码补记日志。
+        res.on('finish', () => {
+          logCall(res.statusCode || 200, resolved.tokenId, resolved.user.id);
+        });
+
+        next();
+      })
+      .catch(next);
+  };
 }
 
 async function writeAudit(req, action, targetType, targetId, summary) {

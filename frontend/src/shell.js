@@ -24,7 +24,7 @@ if (body.classList.contains('vben-shell')) {
   const pageName = title.textContent;
   const header = document.createElement('header');
   header.className = 'workspace-header';
-  header.innerHTML = `<div class="workspace-breadcrumb"><button type="button" class="shell-toggle" aria-label="收起导航" aria-expanded="true" aria-controls="workspace-sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M13 9h4M13 13h4"/></svg></button><a href="/">汐航</a><span aria-hidden="true">/</span><strong class="current-page"></strong></div><div class="workspace-tools"><button type="button" id="quickSearchBtn" class="shell-icon-btn" aria-label="快速搜索（Ctrl+K）" title="快速搜索（Ctrl+K）"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button><button type="button" id="notifyBtn" class="shell-icon-btn" aria-label="通知" title="通知" aria-expanded="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 13 6 9Z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg><span class="shell-notify-dot" hidden></span></button><button type="button" id="fullscreenBtn" class="shell-icon-btn" aria-label="全屏" title="全屏"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button><a href="/#app-map" class="shell-directory">应用目录 <span>↗</span></a></div>`;
+  header.innerHTML = `<div class="workspace-breadcrumb"><button type="button" class="shell-toggle" aria-label="收起导航" aria-expanded="true" aria-controls="workspace-sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M13 9h4M13 13h4"/></svg></button><a href="/app">汐航</a><span aria-hidden="true">/</span><strong class="current-page"></strong></div><div class="workspace-tools"><button type="button" id="quickSearchBtn" class="shell-icon-btn" aria-label="快速搜索（Ctrl+K）" title="快速搜索（Ctrl+K）"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button><button type="button" id="notifyBtn" class="shell-icon-btn" aria-label="通知" title="通知" aria-expanded="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 13 6 9Z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg><span class="shell-notify-dot" hidden></span></button><button type="button" id="fullscreenBtn" class="shell-icon-btn" aria-label="全屏" title="全屏"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button><a href="/app#app-map" class="shell-directory">应用目录 <span>↗</span></a></div>`;
   header.querySelector('.current-page').textContent = pageName;
   const actions = pageHeader.querySelector('.console-user') || pageHeader.querySelector('#logoutBtn');
   if (actions) header.querySelector('.workspace-tools').append(actions);
@@ -32,7 +32,7 @@ if (body.classList.contains('vben-shell')) {
   tabs.className = 'workspace-tabs';
   tabs.setAttribute('aria-label', '页面导航');
   const home = document.createElement('a');
-  home.href = '/'; home.textContent = '工作台'; tabs.append(home);
+  home.href = '/app'; home.textContent = '工作台'; tabs.append(home);
   const onHome = body.classList.contains('home-page');
   const current = onHome ? home : document.createElement('a');
   if (!onHome) { current.href = window.location.pathname; current.textContent = pageName; tabs.append(current); }
@@ -251,7 +251,7 @@ function initTabBar(tabs, home) {
     const closed = readSet('tidesail.tabs.closed');
     closed.add(href);
     writeSet('tidesail.tabs.closed', closed);
-    if (window.location.pathname === href) { window.location.href = '/'; return; }
+    if (window.location.pathname === href) { window.location.href = '/app'; return; }
     tabs.querySelector(`a[data-href="${CSS.escape(href)}"]`)?.remove();
   }
 
@@ -260,7 +260,7 @@ function initTabBar(tabs, home) {
     const pinned = readSet('tidesail.tabs.pinned');
     [...tabs.querySelectorAll('a[data-href]')].forEach(tab => {
       const href = tab.dataset.href;
-      if (href === keepHref || href === '/' || href === window.location.pathname || pinned.has(href)) return;
+      if (href === keepHref || href === '/app' || href === window.location.pathname || pinned.has(href)) return;
       closed.add(href);
       tab.remove();
     });
@@ -291,19 +291,25 @@ function initTabBar(tabs, home) {
     tabs.querySelector(`a[data-href="${CSS.escape(href)}"]`) && updateCloseButton(tabs.querySelector(`a[data-href="${CSS.escape(href)}"]`), href, false);
   }
 
-  decorate(home, '/', true);
+  decorate(home, '/app', true);
   tabBarDecorate = decorate;
 }
 
 // A single authenticated navigation model for every internal page.
 export function setWorkspaceUser(user) {
   const allowed = user.role === 'admin';
+  // 侧栏底部这两格只有首页写过，其余页面一直是占位的 "-"。
+  // 统一在这里填，任何调用 setWorkspaceUser 的页面都能正确显示。
+  const accountName = document.querySelector('#accountName');
+  const accountRole = document.querySelector('#accountRole');
+  if (accountName) accountName.textContent = user.nick || user.username || '-';
+  if (accountRole) accountRole.textContent = user.role === 'admin' ? '管理员' : '普通成员';
   document.querySelectorAll('.admin-only').forEach(node => node.classList.toggle('hidden', !allowed));
   const nav = document.querySelector('.side-nav');
   const tabs = document.querySelector('.workspace-tabs');
   const notifyBtn = document.querySelector('#notifyBtn');
   if (notifyBtn) notifyBtn.hidden = !allowed;
-  const pages = [['/', '工作台'], ['/vault.html', '星钥库'], ...(allowed ? [['/admin.html', '管理中枢'], ['/ledger.html', '成本台账'], ['/screen.html', '数据大屏']] : [])];
+  const pages = [['/app', '工作台'], ['/vault.html', '星钥库'], ['/apply.html', '申请中心'], ...(allowed ? [['/admin.html', '管理中枢'], ['/ledger.html', '成本台账'], ['/screen.html', '数据大屏']] : [])];
   const closed = readSet('tidesail.tabs.closed');
   const currentPath = window.location.pathname;
   if (closed.has(currentPath)) { closed.delete(currentPath); writeSet('tidesail.tabs.closed', closed); }
@@ -317,7 +323,7 @@ export function setWorkspaceUser(user) {
     }
     link.classList.remove('hidden'); link.classList.add('primary-navigation-link');
     if (window.location.pathname === href) link.classList.add('active');
-    if (href === '/') continue; // the home tab is always created up-front and always shown
+    if (href === '/app') continue; // the home tab is always created up-front and always shown
     if (closed.has(href) && href !== currentPath) { tabs.querySelector(`a[data-href="${CSS.escape(href)}"]`)?.remove(); continue; }
     let tab = [...tabs.querySelectorAll('a')].find(node => new URL(node.href).pathname === href);
     if (!tab) { tab = document.createElement('a'); tab.href = href; tab.textContent = name; tabs.insertBefore(tab, tabs.querySelector('.workspace-label')); }

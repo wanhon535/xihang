@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="robots" content="noindex, follow" />
+    <meta name="description" content="汐航 TideSail 工作台。此页面需要登录后访问，不参与搜索引擎收录。" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>申请中心 - 汐航</title>
+    <script src="/theme-bootstrap.js"></script>
+    <link rel="stylesheet" href="/src/styles/styles.css" />
+    <link rel="stylesheet" href="/src/styles/admin-layout.css" />
+    <link rel="stylesheet" href="/src/styles/apply.css" />
+  
+    
+    
+    <link rel="stylesheet" href="/src/styles/swiftui.css">
+    <link rel="stylesheet" href="/src/styles/control-fixes.css">
+    <link rel="stylesheet" href="/src/styles/brand-logo.css">
+</head>
+  <body class="console-page vben-shell apply-page">
+    <aside class="side-rail" aria-label="主导航">
+      <a class="side-logo" href="/app" aria-label="汐航">
+        <span class="side-logo-mark"><img src="/brand/icon-white.png" alt="汐航" width="28" height="28"></span>
+        <strong>汐航</strong>
+      </a>
+      <nav class="side-nav">
+        <a href="/app"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6"/></svg></b><span>工作台</span></a>
+        <a href="/vault.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.5 12.5 8-8 2 2-2 2 2 2-3 3-2-2-2 2"/></svg></b><span>星钥库</span></a>
+        <a class="active" href="/apply.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h4"/></svg></b><span>申请中心</span></a>
+        <a href="/api.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5M15 7l5 5-5 5"/></svg></b><span>API</span></a>
+        <a class="admin-only hidden" href="/admin.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.3-8 10-4.6-1.7-8-5-8-10V6l8-3Z"/><path d="m9 12 2 2 4-4"/></svg></b><span>管理中枢</span></a>
+        <a class="admin-only hidden" href="/ledger.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></b><span>成本台账</span></a>
+      </nav>
+      <div class="rail-note">
+        <span id="accountName">-</span>
+        <small id="accountRole">-</small>
+      </div>
+    </aside>
+
+    <main class="console-main">
+      <header class="console-topbar">
+        <div>
+          <p class="eyebrow">APPLY CENTER</p>
+          <h1>申请中心</h1>
+          <p class="topbar-subtitle">选一个申请类型填写，提交后直接进入对应台账。</p>
+        </div>
+        <div class="console-user">
+          <span id="userName">-</span>
+          <button id="logoutBtn" type="button">退出</button>
+        </div>
+      </header>
+
+      <p id="applyStatus" class="apply-status" role="status" aria-live="polite">正在加载申请类型…</p>
+
+      <section id="applyHero" class="apply-hero" hidden>
+        <div class="apply-hero-text">
+          <strong id="heroGreeting">你好</strong>
+          <p>点卡片直接填，提交后自动写入对应的钉钉台账，不用再复制粘贴。</p>
+        </div>
+        <span class="apply-hero-chip"><strong id="heroFormCount">0</strong>类申请可填</span>
+      </section>
+
+      <section id="applyGrid" class="apply-grid" aria-label="申请类型列表"></section>
+
+      <p id="applyEmpty" class="apply-empty" hidden>还没有配置任何申请类型。</p>
+      <footer class="site-beian"><span>© 2026 云南汐构信息技术有限公司</span><span class="site-beian-sep" aria-hidden="true">·</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" title="工业和信息化部政务服务平台 · ICP/IP地址/域名信息备案管理系统">滇ICP备2026021477号-1</a></footer>
+    </main>
+
+    <!-- 填写弹层 -->
+    <div id="applyModal" class="apply-modal" hidden>
+      <div class="apply-modal-backdrop" data-close="1"></div>
+      <div class="apply-dialog" role="dialog" aria-modal="true" aria-labelledby="applyDialogTitle">
+        <header class="apply-dialog-head">
+          <div class="apply-dialog-title">
+            <span id="applyDialogIcon" class="apply-icon"></span>
+            <div>
+              <h2 id="applyDialogTitle">申请</h2>
+              <p id="applyDialogSubtitle"></p>
+            </div>
+          </div>
+          <button id="applyDialogClose" class="apply-dialog-close" type="button" aria-label="关闭">×</button>
+        </header>
+
+        <div class="apply-dialog-body">
+          <form id="applyForm" class="apply-form" novalidate>
+            <div id="applyFields" class="apply-fields"></div>
+            <p id="applyFormError" class="apply-form-error" role="alert"></p>
+            <footer class="apply-dialog-foot">
+              <div class="apply-foot-actions">
+                <span id="applyFormHint" class="apply-form-hint"></span>
+                <button id="applyCancelBtn" class="plain-btn" type="button">取消</button>
+                <button id="applySubmitBtn" class="primary-btn" type="submit">提交</button>
+              </div>
+            </footer>
+          </form>
+
+          <div id="applyDone" class="apply-done" hidden>
+            <span class="apply-done-mark" aria-hidden="true">✓</span>
+            <h3>提交成功</h3>
+            <p id="applyDoneText">记录已经写进台账。</p>
+            <div class="apply-done-actions">
+              <a id="applyDoneTable" class="primary-btn" href="#" target="_blank" rel="noopener">打开台账查看</a>
+              <button id="applyDoneAgain" class="plain-btn" type="button">再填一条</button>
+              <button id="applyDoneClose" class="plain-btn" type="button">关闭</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/pages/apply.js"></script>
+  </body>
+</html>

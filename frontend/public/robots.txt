@@ -1,0 +1,40 @@
+User-agent: *
+Allow: /
+Disallow: /app
+Disallow: /api
+Disallow: /admin.html
+Disallow: /vault.html
+Disallow: /ledger.html
+Disallow: /knowledge.html
+Disallow: /screen.html
+Disallow: /change-password.html
+
+User-agent: GPTBot
+Allow: /
+Disallow: /app
+Disallow: /api
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /app
+Disallow: /api
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+Sitemap: https://xigouoa.xyz/sitemap.xml

@@ -1,0 +1,1323 @@
+/* ============================================================================
+   swiftui.css — SwiftUI / Apple HIG design language for the TideSail workspace
+   ----------------------------------------------------------------------------
+   Adopted from Apple's SwiftUI Human Interface Guidelines:
+     · semantic colour roles      (Color.primary / .secondary / .tertiary / .quaternary)
+     · materials                  (.ultraThinMaterial … .ultraThickMaterial)
+     · continuous corners         (RoundedRectangle(cornerRadius:style:.continuous))
+     · semantic type scale        (.largeTitle .title .headline .body .caption)
+     · spring motion              (.spring(response:dampingFraction:))
+     · control styles             (.borderedProminent / .bordered / .plain)
+     · environment values         (colorScheme / accessibilityContrast / reduceMotion
+                                   / reduceTransparency)
+
+   Loaded LAST on every authenticated page so it can both *define* the system and
+   *re-map* the existing TideSail components onto it without editing five
+   stylesheets that each hardcode their own greys.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   1. SEMANTIC COLOUR ROLES
+   SwiftUI never asks you to pick a grey for "secondary text" — you ask for
+   `.secondary` and the system resolves it against the current colour scheme.
+   The old sheets did the opposite: ~20 hardcoded hexes (#7587a2, #7185a2,
+   #627590, #93a4bf, #99b0d2 …) that each drifted independently and all broke
+   the moment a custom workspace theme was applied. Collapse them into four
+   opacity steps over the label colour, exactly like the platform does.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page,
+.password-reference-page,
+.auth-page {
+  --sui-label: var(--ink);
+  --sui-label-2: color-mix(in srgb, var(--ink) 76%, transparent);
+  --sui-label-3: color-mix(in srgb, var(--ink) 62%, transparent);
+  --sui-label-4: color-mix(in srgb, var(--ink) 58%, transparent);
+  --sui-fill: color-mix(in srgb, var(--ink) 7%, transparent);
+  --sui-fill-2: color-mix(in srgb, var(--ink) 12%, transparent);
+  --sui-fill-3: color-mix(in srgb, var(--ink) 18%, transparent);
+  --sui-separator: color-mix(in srgb, var(--ink) 14%, transparent);
+  --sui-tint: var(--primary);
+  --sui-tint-soft: color-mix(in srgb, var(--primary) 16%, transparent);
+  --sui-tint-label: color-mix(in srgb, var(--primary) 82%, var(--ink));
+  --sui-green: #34d399;
+  --sui-amber: #fbbf24;
+  --sui-red: #fb7185;
+
+  /* Semantic type scale — .largeTitle 34 / .title 28 / .title2 22 / .title3 20
+     / .headline 17 / .body 17 / .callout 16 / .subheadline 15 / .footnote 13
+     / .caption 12 / .caption2 11. Fluid where the viewport matters, fixed where
+     it does not — the same rule SwiftUI applies via Dynamic Type.
+
+     2026-11-04 整体下调一档：用户反馈「文字展示还是有一些太大了」。
+     SwiftUI 的字阶是按 iOS 的阅读距离标定的，搬到 1600×1000 的桌面控制台上
+     同名字号会显得偏大。这里统一收一档，保持原有的层级比例不变：
+
+       largeTitle  34 → 28   title  28 → 23   title3  20 → 17
+       headline    15 → 14   body   14 → 13   callout 13 → 12.5
+       footnote    12 → 11.5 caption 11 → 11
+     ------------------------------------------------------------------------- */
+  --sui-text-large-title: clamp(24px, 1.9vw, 28px);
+  --sui-text-title: clamp(18px, 1.5vw, 23px);
+  --sui-text-title3: 17px;
+  --sui-text-headline: 14px;
+  --sui-text-body: 13px;
+  --sui-text-callout: 12.5px;
+  --sui-text-footnote: 11.5px;
+  --sui-text-caption: 11px;
+
+  /* .spring(response: 0.34, dampingFraction: 0.72) — a real overshoot, so taps
+     and hovers feel physical instead of the linear 160ms ease everything used. */
+  --sui-spring: cubic-bezier(.34, 1.42, .64, 1);
+  --sui-snappy: cubic-bezier(.2, .9, .3, 1);
+  --sui-duration: 240ms;
+  --sui-duration-fast: 140ms;
+}
+
+/* ---------------------------------------------------------------------------
+   ELEVATION RAMP — 在 CSS 层重建，不碰主题引擎
+   ---------------------------------------------------------------------------
+   原主题引擎（workspace-theme.js）把 surface/line 从锚点灰 [13,17,25] 向用户
+   背景色混合。当用户背景比锚点更暗（默认 #081625 就比 #0d1119 暗）时整条阶梯
+   塌缩 —— 实测内联在 body 上的值：
+
+     --canvas #0c121a   --surface #0c131d   --surface-2 #0b131e
+     --surface-3 #0b131e  --line #0b131e    --line-strong #0a1420
+     ↑ 六个值挤在两个色阶内，且 --line 比 --surface 还暗 → 卡片没有边界
+
+   而 shell.css 里 `body.vben-shell.console-page` 的**默认阶梯是健康的**
+   (#0d1119 → #171d29 → #1c2432 → #202b3c, line #2a3445, line-strong #3c4b63)。
+   也就是说：用户一旦自定义外观，健康阶梯就被内联值顶掉了。
+
+   ⚠️ workspace-theme.js 的派生逻辑属于用户外观配置
+      （user_preferences.workspace_theme），不许改。所以这里在 body 层重建阶梯：
+      以用户选的 --canvas 为基色（保住他配的颜色与色相），只叠加少量 --ink
+      造出真正的明度阶梯。
+
+   必须写在 body 选择器 + !important：主题值是 JS 直接 setProperty 到
+   document.body.style 的内联样式，只有 !important 能盖过它；而
+   `.vben-shell.console-page`(0-2-0) 又会被 `body.vben-shell.console-page`
+   (0-1-1 + 元素) 抢先——实测写在子树里读出来还是旧值。
+
+   不变量（每次改完必须量）：line 比 surface 亮，line-strong 比 line 亮。
+   ------------------------------------------------------------------------- */
+body.vben-shell.console-page,
+body.auth-page,
+body.password-reference-page {
+  --surface: color-mix(in srgb, var(--canvas) 86%, var(--ink) 14%) !important;
+  --surface-2: color-mix(in srgb, var(--canvas) 76%, var(--ink) 24%) !important;
+  --surface-3: color-mix(in srgb, var(--canvas) 66%, var(--ink) 34%) !important;
+  --rail-surface: color-mix(in srgb, var(--canvas) 80%, var(--ink) 20%) !important;
+  --line: color-mix(in srgb, var(--canvas) 70%, var(--ink) 30%) !important;
+  --line-strong: color-mix(in srgb, var(--canvas) 56%, var(--ink) 44%) !important;
+  --theme-soft: color-mix(in srgb, var(--canvas) 70%, var(--primary) 30%) !important;
+  --theme-hover: color-mix(in srgb, var(--canvas) 78%, var(--primary) 22%) !important;
+  --theme-accent: color-mix(in srgb, var(--ink) 58%, var(--primary) 42%) !important;
+}
+
+/* SwiftUI continuous corners: the radius becomes a squircle rather than a
+   quarter-circle, which is why native cards read "softer" at the same radius.
+   Chromium/Safari 16.4+ honour corner-shape; everything else keeps the arc. */
+@supports (corner-shape: squircle) {
+  .vben-shell.console-page .board,
+  .vben-shell.console-page .dashboard-hero,
+  .vben-shell.console-page .dashboard-stats article,
+  .vben-shell.console-page .admin-stats-grid article,
+  .vben-shell.console-page .vault-summary article,
+  .vben-shell.console-page .ledger-stats article,
+  .vben-shell.console-page .system-card,
+  .vben-shell.console-page .quick-tile,
+  .vben-shell.console-page .screen-card,
+  .vben-shell.console-page .screen-kpi-tile,
+  .vben-shell.console-page .vault-actions-bar,
+  .vben-shell.console-page .workspace-theme-panel,
+  .vben-shell.console-page .role-card,
+  .vben-shell.console-page .admin-card,
+  .vben-shell.console-page .site-editor,
+  .vben-shell.console-page .backup-box,
+  .vben-shell.console-page .credential-card,
+  .vben-shell.console-page .ledger-panel,
+  .vben-shell.console-page .shell-search-panel,
+  .vben-shell.console-page .shell-notify-panel,
+  .vben-shell.console-page .shell-tab-menu,
+  .vben-shell.console-page dialog,
+  .reference-login-card,
+  .preview-mockup,
+  .password-reset-card {
+    corner-shape: squircle;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   2. MATERIALS
+   SwiftUI materials are translucent layers that sample what is behind them and
+   add blur + saturation — not flat fills with a drop shadow. Replaces the
+   `background: color-mix(...) + backdrop-filter: blur(8px)` one-off that was
+   applied to only four selectors, so cards and chrome now share one vocabulary.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page {
+  --sui-material-thin: color-mix(in srgb, var(--surface) 62%, transparent);
+  --sui-material-regular: color-mix(in srgb, var(--surface) 80%, transparent);
+  --sui-material-thick: color-mix(in srgb, var(--surface) 92%, transparent);
+  --sui-blur: saturate(1.7) blur(22px);
+}
+
+/* Material + hairline + a single soft ambient shadow. Elevation comes from the
+   *combination*, which is what makes a native card sit on the surface instead of
+   *looking like a rectangle drawn on it. */
+.vben-shell.console-page .board,
+.vben-shell.console-page .dashboard-hero,
+.vben-shell.console-page .dashboard-stats article,
+.vben-shell.console-page .admin-stats-grid article,
+.vben-shell.console-page .vault-summary article,
+.vben-shell.console-page .ledger-stats article,
+.vben-shell.console-page .vault-actions-bar,
+.vben-shell.console-page .workspace-theme-panel,
+.vben-shell.console-page .ledger-panel,
+.vben-shell.console-page .screen-card,
+.vben-shell.console-page .screen-kpi-tile,
+.vben-shell.console-page .screen-statusbar {
+  background: var(--sui-material-regular);
+  border: 1px solid var(--line);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--ink) 6%, transparent),
+    0 1px 2px rgb(0 0 0 / .18),
+    0 12px 32px -18px rgb(0 0 0 / .55);
+  backdrop-filter: var(--sui-blur);
+}
+
+/* Cards that hold dense content (app directory, credential list) get the thicker
+   material: text legibility beats see-through-ness when there is a lot to read. */
+.vben-shell.console-page .system-card {
+  background: var(--sui-material-thick);
+  border: 1px solid var(--line);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--ink) 7%, transparent),
+    0 1px 2px rgb(0 0 0 / .2),
+    0 10px 26px -16px rgb(0 0 0 / .5);
+  transition:
+    border-color var(--sui-duration-fast) var(--sui-snappy),
+    background var(--sui-duration-fast) var(--sui-snappy),
+    box-shadow var(--sui-duration) var(--sui-snappy),
+    transform var(--sui-duration) var(--sui-spring);
+}
+
+/* ---------------------------------------------------------------------------
+   3. TYPE
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page,
+.password-reference-page,
+.auth-page {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "kern" 1, "liga" 1;
+}
+
+/* Optical sizing: display sizes tighten, small sizes loosen. Fixed tracking on
+   every size is the single biggest tell of a non-native UI. */
+.vben-shell.console-page h1,
+.password-reference-page h1,
+.auth-page h1 {
+  font-size: var(--sui-text-large-title);
+  font-weight: 700;
+  letter-spacing: -.022em;
+  line-height: 1.14;
+}
+
+.vben-shell.console-page .page-heading h1,
+.vben-shell.console-page .console-topbar h1 {
+  font-size: var(--sui-text-title);
+  font-weight: 700;
+  letter-spacing: -.018em;
+}
+
+.vben-shell.console-page .board-head h2,
+.vben-shell.console-page .ledger-toolbar h2,
+.vben-shell.console-page .screen-card h2 {
+  font-size: var(--sui-text-headline);
+  font-weight: 650;
+  letter-spacing: -.008em;
+}
+
+.vben-shell.console-page .system-card-body strong,
+.vben-shell.console-page .quick-tile strong,
+.vben-shell.console-page .credential-card strong {
+  font-size: var(--sui-text-body);
+  font-weight: 620;
+  letter-spacing: -.006em;
+}
+
+.vben-shell.console-page .system-card-body p,
+.vben-shell.console-page .quick-tile p,
+.vben-shell.console-page .dashboard-hero p,
+.vben-shell.console-page .board-head p {
+  font-size: var(--sui-text-callout);
+  line-height: 1.62;
+  color: var(--sui-label-2);
+}
+
+/* Numbers: tabular figures so columns never jitter between 9 and 11 px glyphs. */
+.vben-shell.console-page .dashboard-stats strong,
+.vben-shell.console-page .admin-stats-grid strong,
+.vben-shell.console-page .vault-summary strong,
+.vben-shell.console-page .ledger-stats strong,
+.vben-shell.console-page .screen-kpi-tile strong,
+.vben-shell.console-page .screen-clock strong {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -.02em;
+}
+
+/* ---------------------------------------------------------------------------
+   4. CONTROL STYLES
+   Three tiers, one look: prominent (tinted, one per view), bordered (secondary
+   action), plain (tertiary / destructive). Heights follow the 44px touch target
+   from .regular control size, scaled down to 34/38 for a pointer-only console.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page button,
+.vben-shell.console-page .plain-btn,
+.vben-shell.console-page .primary-btn,
+.vben-shell.console-page .danger-btn,
+.vben-shell.console-page .small-btn {
+  border-radius: 9px;
+  transition:
+    background var(--sui-duration-fast) var(--sui-snappy),
+    border-color var(--sui-duration-fast) var(--sui-snappy),
+    color var(--sui-duration-fast) var(--sui-snappy),
+    transform var(--sui-duration-fast) var(--sui-spring),
+    box-shadow var(--sui-duration-fast) var(--sui-snappy);
+}
+
+.vben-shell.console-page button:active:not(:disabled),
+.vben-shell.console-page .plain-btn:active:not(:disabled),
+.vben-shell.console-page .primary-btn:active:not(:disabled) {
+  transform: scale(.972);
+}
+
+.vben-shell.console-page button,
+.vben-shell.console-page .plain-btn,
+.vben-shell.console-page .console-user button,
+.vben-shell.console-page .small-btn {
+  background: var(--sui-fill);
+  border: 1px solid var(--line);
+  color: var(--sui-label);
+  font-weight: 550;
+}
+
+.vben-shell.console-page button:hover,
+.vben-shell.console-page .plain-btn:hover,
+.vben-shell.console-page .console-user button:hover {
+  background: var(--sui-fill-2);
+  border-color: var(--line-strong);
+  color: var(--sui-label);
+}
+
+.vben-shell.console-page .primary-btn,
+.vben-shell.console-page button.ledger-primary,
+.vben-shell.console-page .reference-submit {
+  background: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 78%, var(--ink));
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / .22), 0 8px 20px -12px color-mix(in srgb, var(--primary) 70%, transparent);
+}
+
+.vben-shell.console-page .primary-btn:hover,
+.vben-shell.console-page button.ledger-primary:hover {
+  background: color-mix(in srgb, var(--primary) 88%, var(--ink));
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--ink));
+}
+
+.vben-shell.console-page .danger-btn {
+  background: color-mix(in srgb, var(--sui-red) 12%, transparent);
+  border-color: color-mix(in srgb, var(--sui-red) 42%, transparent);
+  color: var(--sui-red);
+}
+
+/* ---------------------------------------------------------------------------
+   5. FIELD
+   The old sheets drew a 1px grey box and relied on colour alone. SwiftUI fields
+   are a fill + an inner hairline + a focus ring that expands outward, so the
+   field never shifts layout when it gains focus.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page .field-input,
+.vben-shell.console-page .search-input,
+.vben-shell.console-page input:not([type=checkbox]):not([type=range]):not([type=color]),
+.vben-shell.console-page select,
+.vben-shell.console-page textarea {
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--canvas) 72%, transparent);
+  color: var(--sui-label);
+  transition:
+    border-color var(--sui-duration-fast) var(--sui-snappy),
+    box-shadow var(--sui-duration-fast) var(--sui-snappy),
+    background var(--sui-duration-fast) var(--sui-snappy);
+}
+
+.vben-shell.console-page input:focus,
+.vben-shell.console-page textarea:focus,
+.vben-shell.console-page select:focus {
+  border-color: color-mix(in srgb, var(--primary) 70%, var(--line-strong));
+  background: color-mix(in srgb, var(--canvas) 88%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 26%, transparent);
+  outline: none;
+}
+
+.vben-shell.console-page .search-box {
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--canvas) 72%, transparent);
+  border: 1px solid var(--line);
+}
+
+/* Native selects get a real chevron instead of the OS default arrow, which on a
+   dark surface renders as a low-contrast grey blob. */
+.vben-shell.console-page select {
+  appearance: none;
+  padding-right: 30px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--sui-label-3) 50%),
+    linear-gradient(135deg, var(--sui-label-3) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+/* ---------------------------------------------------------------------------
+   6. TAB BAR
+   Tab bar reads as a segmented control (SwiftUI .segmented picker): shared
+   track, single pill, spring slide — not six individually-bordered boxes.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page .workspace-tabs {
+  gap: 4px;
+  padding: 6px 24px 0;
+  height: 44px;
+  align-items: center;
+  background: var(--sui-material-thick);
+  backdrop-filter: var(--sui-blur);
+  border-bottom: 1px solid var(--line);
+}
+
+.vben-shell.console-page .workspace-tabs a {
+  height: 30px;
+  padding: 4px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--sui-label-3);
+  font-size: var(--sui-text-footnote);
+  font-weight: 550;
+  transition:
+    background var(--sui-duration-fast) var(--sui-snappy),
+    color var(--sui-duration-fast) var(--sui-snappy),
+    transform var(--sui-duration-fast) var(--sui-spring);
+}
+
+.vben-shell.console-page .workspace-tabs a:hover {
+  color: var(--sui-label);
+  background: var(--sui-fill);
+}
+
+.vben-shell.console-page .workspace-tabs a.active {
+  background: var(--sui-tint-soft);
+  border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+  color: var(--sui-tint-label);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink) 10%, transparent);
+  font-weight: 620;
+}
+
+.vben-shell.console-page .workspace-label {
+  color: var(--sui-label-4);
+  font-size: var(--sui-text-caption);
+  letter-spacing: .08em;
+}
+
+/* ---------------------------------------------------------------------------
+   7. SIDEBAR — the source list of the console
+   Selected row gets a tinted pill (SwiftUI List selection), not a full-width
+   colour block; the icon keeps its own tinted chip so the row never loses its
+   anchor when selected.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page .side-nav {
+  gap: 2px;
+  padding: 12px 10px;
+}
+
+.vben-shell.console-page .side-nav a {
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--sui-label-2);
+  font-size: var(--sui-text-callout);
+  font-weight: 500;
+  transition:
+    background var(--sui-duration-fast) var(--sui-snappy),
+    color var(--sui-duration-fast) var(--sui-snappy);
+}
+
+.vben-shell.console-page .side-nav a b {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--sui-fill);
+  color: var(--sui-label-2);
+  transition:
+    background var(--sui-duration-fast) var(--sui-snappy),
+    color var(--sui-duration-fast) var(--sui-snappy);
+}
+
+.vben-shell.console-page .side-nav a:hover {
+  background: var(--sui-fill);
+  color: var(--sui-label);
+}
+
+.vben-shell.console-page .side-nav a:hover b {
+  background: var(--sui-fill-2);
+  color: var(--sui-label);
+}
+
+.vben-shell.console-page .side-nav a.active {
+  background: var(--sui-tint-soft);
+  color: var(--sui-tint-label);
+  font-weight: 620;
+}
+
+/* 激活项文字实测 3.26（--sui-tint-label = primary 82% + ink 18%，压在
+   --theme-soft 上）。13px 正文要 4.5，故把 ink 比例提到 50% —— 保留主题色相，
+   只提高明度。 */
+:root .vben-shell.console-page .side-nav a.active {
+  color: color-mix(in srgb, var(--primary) 50%, var(--ink));
+}
+
+.vben-shell.console-page .side-nav a.active b {
+  background: var(--primary);
+  color: #fff;
+}
+
+.vben-shell.console-page .rail-note span {
+  color: var(--sui-label);
+  font-size: var(--sui-text-callout);
+  font-weight: 600;
+}
+
+.vben-shell.console-page .rail-note small {
+  color: var(--sui-label-3);
+  font-size: var(--sui-text-caption);
+}
+
+/* ---------------------------------------------------------------------------
+   8. STATS
+   Four equal tiles, one accent each. Previously every tile was the same grey
+   with a 28px outline glyph parked in the corner, which gave the eye nothing to
+   rank. Now the glyph sits in a tinted chip on the baseline with the label, and
+   the value owns the optical centre.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page .dashboard-stats,
+.vben-shell.console-page .admin-stats-grid,
+.vben-shell.console-page .vault-summary,
+.vben-shell.console-page .ledger-stats {
+  gap: 12px;
+}
+
+.vben-shell.console-page .dashboard-stats article,
+.vben-shell.console-page .admin-stats-grid article,
+.vben-shell.console-page .vault-summary article,
+.vben-shell.console-page .ledger-stats article {
+  position: relative;
+  gap: 6px;
+  padding: 18px 20px 16px;
+  overflow: hidden;
+}
+
+/* A hairline accent along the top edge: the only colour on the tile, so it reads
+   as a category marker rather than decoration. */
+.vben-shell.console-page .dashboard-stats article::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--primary), transparent 72%);
+  opacity: .55;
+}
+
+.vben-shell.console-page .dashboard-stats span,
+.vben-shell.console-page .admin-stats-grid span,
+.vben-shell.console-page .vault-summary span,
+.vben-shell.console-page .ledger-stats span {
+  font-size: var(--sui-text-footnote);
+  font-weight: 550;
+  color: var(--sui-label-2);
+  letter-spacing: .01em;
+}
+
+.vben-shell.console-page .dashboard-stats strong,
+.vben-shell.console-page .admin-stats-grid strong,
+.vben-shell.console-page .vault-summary strong,
+.vben-shell.console-page .ledger-stats strong {
+  font-size: clamp(24px, 2vw, 30px);
+  font-weight: 700;
+  color: var(--sui-label);
+}
+
+.vben-shell.console-page .dashboard-stats small,
+.vben-shell.console-page .admin-stats-grid small,
+.vben-shell.console-page .vault-summary small,
+.vben-shell.console-page .ledger-stats small {
+  font-size: var(--sui-text-caption);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--sui-label-4);
+}
+
+.vben-shell.console-page .dashboard-stats .stat-semantic-icon {
+  top: 16px;
+  right: 16px;
+  width: 20px;
+  height: 20px;
+  color: var(--sui-label-4);
+}
+
+/* ---------------------------------------------------------------------------
+   9. APP DIRECTORY
+   Five columns at 1294px forced 249px cards: descriptions wrapped to three
+   lines while the "进入" affordance repeated 18 times down the page. Four
+   columns, a fixed-height foot slot, and a single arrow that only resolves on
+   hover — the whole card is already the hit target.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page .system-grid {
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 10px;
+}
+
+.vben-shell.console-page .system-card {
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  min-height: 116px;
+  padding: 14px 16px;
+  gap: 10px 12px;
+  border-radius: 12px;
+  will-change: transform;
+}
+
+.vben-shell.console-page .system-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--line-strong));
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  transform: translateY(-1px);
+}
+
+.vben-shell.console-page .system-card:active {
+  transform: scale(.988);
+  transition-duration: var(--sui-duration-fast);
+}
+
+.vben-shell.console-page .system-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  font-size: 16px;
+  background: var(--sui-fill) !important;
+  border: 1px solid var(--line);
+  color: var(--sui-label);
+  transition: transform var(--sui-duration) var(--sui-spring);
+}
+
+.vben-shell.console-page .system-card:hover .system-icon {
+  transform: scale(1.04);
+}
+
+.vben-shell.console-page .system-card-body p {
+  -webkit-line-clamp: 2;
+  margin-top: 3px;
+  color: var(--sui-label-3);
+}
+
+/* Fixed foot slot: cards without tags used to leave the arrow floating on the
+   baseline of a two-line description while tagged neighbours pushed theirs
+   down, so no two cards in a row agreed on where their bottom edge was. */
+.vben-shell.console-page .system-card-foot {
+  align-items: center;
+  min-height: 20px;
+  padding-top: 9px;
+  border-top: 1px solid var(--sui-separator);
+}
+
+.vben-shell.console-page .system-tags {
+  gap: 4px;
+  min-height: 18px;
+}
+
+.vben-shell.console-page .system-tags b {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sui-fill);
+  color: var(--sui-label-3);
+  font-size: 10.5px;
+  font-weight: 550;
+  letter-spacing: .02em;
+}
+
+/* The affordance is an arrow, not the word "进入" eighteen times over. */
+.vben-shell.console-page .system-open {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--sui-label-4);
+  font-size: 0;
+  opacity: 0;
+  transform: translateX(-3px);
+  transition:
+    opacity var(--sui-duration-fast) var(--sui-snappy),
+    transform var(--sui-duration) var(--sui-spring),
+    color var(--sui-duration-fast) var(--sui-snappy);
+}
+
+.vben-shell.console-page .system-open::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-top: 1.5px solid currentColor;
+  border-right: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.vben-shell.console-page .system-card:hover .system-open,
+.vben-shell.console-page .system-card:focus-visible .system-open {
+  opacity: 1;
+  transform: translateX(0);
+  color: var(--sui-tint-label);
+}
+
+/* Infrastructure cards: no tags, so the old `grid-column: 2` rule left the
+   arrow under the text column and the card looked indented. */
+.vben-shell.console-page .infrastructure-section .system-card-foot {
+  grid-column: 1 / -1;
+}
+
+.vben-shell.console-page .infrastructure-section .system-card {
+  min-height: 92px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.vben-shell.console-page .infrastructure-section .system-icon {
+  background: var(--sui-fill) !important;
+  color: var(--sui-label-2);
+}
+
+/* Group filter chips: segmented-control geometry, pressed state via aria. */
+.vben-shell.console-page .directory-filters {
+  gap: 6px;
+  padding: 14px 20px 0;
+}
+
+.vben-shell.console-page .directory-filters button {
+  min-height: 28px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--sui-label-3);
+  font-size: var(--sui-text-footnote);
+  font-weight: 550;
+  transition:
+    background var(--sui-duration-fast) var(--sui-snappy),
+    color var(--sui-duration-fast) var(--sui-snappy),
+    border-color var(--sui-duration-fast) var(--sui-snappy);
+}
+
+.vben-shell.console-page .directory-filters button:hover {
+  background: var(--sui-fill);
+  color: var(--sui-label);
+}
+
+.vben-shell.console-page .directory-filters button[aria-pressed="true"] {
+  background: var(--sui-tint-soft);
+  border-color: color-mix(in srgb, var(--primary) 38%, transparent);
+  color: var(--sui-tint-label);
+  font-weight: 620;
+}
+
+.vben-shell.console-page .system-section-head h3 {
+  font-size: var(--sui-text-body);
+  font-weight: 620;
+}
+
+.vben-shell.console-page .system-section-head p,
+.vben-shell.console-page .system-section-head > span {
+  font-size: var(--sui-text-caption);
+  color: var(--sui-label-3);
+}
+
+/* ---------------------------------------------------------------------------
+   10. LEDGER
+   Three concrete defects, all reproducible:
+     (a) `.ledger-multi-toggle` hardcoded `background:#fff; color:#34465c` at
+         0-4-0 specificity, beating admin-layout's `button` rule (0-2-1) — so the
+         项目/类别 filters rendered as white blocks on a dark panel.
+     (b) rows were 14px padding top-and-bottom with unbounded `white-space:
+         pre-wrap`, so one long 备注 stretched the row to 200px and the money
+         column drifted out of alignment with its neighbours.
+     (c) the sticky header was `#f5f8fb` (light) inside a dark shell.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page.ledger-page .ledger-multi-toggle {
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--canvas) 72%, transparent);
+  color: var(--sui-label);
+  font-size: var(--sui-text-callout);
+  transition:
+    background var(--sui-duration-fast) var(--sui-snappy),
+    border-color var(--sui-duration-fast) var(--sui-snappy);
+}
+
+.vben-shell.console-page.ledger-page .ledger-multi-toggle:hover {
+  background: var(--sui-fill);
+  border-color: var(--line-strong);
+}
+
+.vben-shell.console-page.ledger-page .ledger-multi-toggle::after {
+  color: var(--sui-label-3);
+}
+
+.vben-shell.console-page.ledger-page .ledger-multi-toggle.is-active {
+  border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+  color: var(--sui-tint-label);
+  background: var(--sui-tint-soft);
+  font-weight: 600;
+}
+
+.vben-shell.console-page.ledger-page .ledger-multi-toggle.is-active::after {
+  color: var(--sui-tint-label);
+}
+
+.vben-shell.console-page.ledger-page .ledger-multi-panel {
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 18px 44px -20px rgb(0 0 0 / .6);
+  backdrop-filter: var(--sui-blur);
+}
+
+.vben-shell.console-page.ledger-page .ledger-filters {
+  gap: 12px;
+  padding: 16px 20px;
+  background: color-mix(in srgb, var(--canvas) 34%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+
+.vben-shell.console-page.ledger-page .ledger-filters label {
+  font-size: var(--sui-text-footnote);
+  font-weight: 600;
+  color: var(--sui-label-2);
+  letter-spacing: .01em;
+}
+
+.vben-shell.console-page.ledger-page th,
+.vben-shell.console-page.ledger-page td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--sui-separator);
+  vertical-align: middle;
+}
+
+.vben-shell.console-page.ledger-page thead th {
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: saturate(1.5) blur(12px);
+  color: var(--sui-label-3);
+  font-size: var(--sui-text-caption);
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.vben-shell.console-page.ledger-page tbody tr {
+  transition: background var(--sui-duration-fast) var(--sui-snappy);
+}
+
+.vben-shell.console-page.ledger-page tbody tr:hover {
+  background: var(--sui-fill);
+}
+
+/* Clamp long free text to three lines so one 备注 cannot define the row height
+   for every column beside it. Full text stays available via title/expand. */
+.vben-shell.console-page.ledger-page td {
+  max-width: 240px;
+}
+
+.vben-shell.console-page.ledger-page .ledger-money {
+  text-align: right;
+  font-weight: 620;
+  color: var(--sui-label);
+}
+
+.vben-shell.console-page.ledger-page .ledger-badge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: var(--sui-text-caption);
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.vben-shell.console-page.ledger-page .ledger-paid {
+  background: color-mix(in srgb, var(--sui-green) 16%, transparent);
+  color: var(--sui-green);
+}
+
+.vben-shell.console-page.ledger-page .ledger-unpaid {
+  background: color-mix(in srgb, var(--sui-amber) 16%, transparent);
+  color: var(--sui-amber);
+}
+
+.vben-shell.console-page.ledger-page .ledger-audit {
+  color: var(--sui-label-4);
+  font-size: var(--sui-text-caption);
+}
+
+/* The month input renders as "-------- ----" on a dark surface because the
+   native picker draws its placeholder in a system grey. Give it a label-shaped
+   empty state instead of a row of dashes. */
+.vben-shell.console-page.ledger-page input[type="month"] {
+  color-scheme: dark;
+}
+
+.vben-shell.console-page.ledger-page input[type="month"]:not(:focus):invalid,
+.vben-shell.console-page.ledger-page input[type="month"]:placeholder-shown {
+  color: var(--sui-label-4);
+}
+
+.vben-shell.console-page.ledger-page input[type="month"]::-webkit-datetime-edit {
+  color: inherit;
+}
+
+.vben-shell.console-page.ledger-page dialog {
+  border-radius: 18px;
+  border: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
+  box-shadow: 0 40px 120px -40px rgb(0 0 0 / .8), 0 0 0 1px color-mix(in srgb, var(--ink) 8%, transparent);
+  backdrop-filter: var(--sui-blur);
+}
+
+.vben-shell.console-page.ledger-page dialog::backdrop {
+  background: rgb(4 7 12 / .62);
+  backdrop-filter: blur(6px);
+}
+
+/* ---------------------------------------------------------------------------
+   11. SCREEN (数据大屏)
+   KPI glyphs were literal emoji (📁 ⚠️ ⏱️ 💰). This host has no colour-emoji
+   font, so each codepoint fell back to .notdef and — because the surrogate pair
+   wraps inside an inline-grid — rendered as two stacked hollow rectangles.
+   Now the glyph is an inline SVG: no font dependency at all.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page .screen-kpi-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--sui-tint-soft);
+  color: var(--sui-tint-label);
+}
+
+.vben-shell.console-page .screen-kpi-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vben-shell.console-page .screen-kpi-danger .screen-kpi-icon {
+  background: color-mix(in srgb, var(--sui-red) 16%, transparent);
+  color: var(--sui-red);
+}
+
+.vben-shell.console-page .screen-kpi-warning .screen-kpi-icon {
+  background: color-mix(in srgb, var(--sui-amber) 16%, transparent);
+  color: var(--sui-amber);
+}
+
+.vben-shell.console-page .screen-kpi-tile {
+  gap: 6px;
+  padding: 16px 18px;
+}
+
+.vben-shell.console-page .screen-kpi-tile::before {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--primary) 10%, transparent), transparent 62%);
+}
+
+.vben-shell.console-page .screen-kpi-tile strong {
+  font-size: clamp(26px, 2.2vw, 32px);
+  font-weight: 700;
+  color: var(--sui-label);
+  text-shadow: none;
+}
+
+.vben-shell.console-page .screen-kpi-danger strong {
+  color: var(--sui-red);
+  text-shadow: none;
+}
+
+.vben-shell.console-page .screen-kpi-warning strong {
+  color: var(--sui-amber);
+  text-shadow: none;
+}
+
+.vben-shell.console-page .screen-kpi-tile span {
+  font-size: var(--sui-text-footnote);
+  color: var(--sui-label-2);
+  font-weight: 550;
+}
+
+.vben-shell.console-page .screen-kpi-tile:hover {
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--line-strong));
+  box-shadow: 0 1px 2px rgb(0 0 0 / .2), 0 16px 34px -22px color-mix(in srgb, var(--primary) 70%, transparent);
+}
+
+.vben-shell.console-page .screen-clock strong {
+  color: var(--sui-tint-label);
+  text-shadow: none;
+  font-weight: 650;
+  letter-spacing: .04em;
+}
+
+/* Data-flow diagram: the label at y=140 sat outside the 140-unit viewBox and
+   collided with the node circles. Give the canvas breathing room and anchor
+   every label clear of its node. */
+.vben-shell.console-page .screen-flow-svg {
+  max-width: 720px;
+}
+
+.vben-shell.console-page .screen-flow-nodes text {
+  fill: var(--sui-label-2);
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.vben-shell.console-page .screen-flow-links path {
+  stroke: var(--sui-label-4);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 5;
+}
+
+.vben-shell.console-page .screen-flow-nodes circle {
+  fill: color-mix(in srgb, var(--surface) 92%, transparent);
+  stroke: color-mix(in srgb, var(--primary) 58%, transparent);
+}
+
+.vben-shell.console-page .screen-donut-track {
+  stroke: var(--sui-fill);
+}
+
+.vben-shell.console-page .screen-donut-center strong {
+  font-size: clamp(20px, 1.8vw, 24px);
+  font-weight: 700;
+  color: var(--sui-label);
+}
+
+.vben-shell.console-page .screen-donut-center span,
+.vben-shell.console-page .screen-donut-legend {
+  font-size: var(--sui-text-footnote);
+  color: var(--sui-label-2);
+}
+
+.vben-shell.console-page .screen-dot-unpaid {
+  background: var(--sui-label-4);
+}
+
+.vben-shell.console-page .screen-bar-track {
+  background: var(--sui-fill);
+  height: 7px;
+  border-radius: 999px;
+}
+
+.vben-shell.console-page .screen-bar-fill {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 62%, transparent), var(--primary));
+  border-radius: 999px;
+}
+
+.vben-shell.console-page .screen-bar-label {
+  color: var(--sui-label-2);
+  font-size: var(--sui-text-footnote);
+}
+
+.vben-shell.console-page .screen-bar-value {
+  color: var(--sui-label);
+  font-size: var(--sui-text-footnote);
+  font-variant-numeric: tabular-nums;
+}
+
+.vben-shell.console-page .screen-badge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: var(--sui-text-caption);
+  font-weight: 600;
+}
+
+.vben-shell.console-page .screen-badge-danger {
+  background: color-mix(in srgb, var(--sui-red) 16%, transparent);
+  color: var(--sui-red);
+}
+
+.vben-shell.console-page .screen-badge-warning {
+  background: color-mix(in srgb, var(--sui-amber) 16%, transparent);
+  color: var(--sui-amber);
+}
+
+.vben-shell.console-page .screen-badge-ok {
+  background: color-mix(in srgb, var(--sui-green) 16%, transparent);
+  color: var(--sui-green);
+}
+
+.vben-shell.console-page .screen-project-table th {
+  color: var(--sui-label-3);
+  font-size: var(--sui-text-caption);
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.vben-shell.console-page .screen-project-table td {
+  border-bottom: 1px solid var(--sui-separator);
+  color: var(--sui-label);
+}
+
+.vben-shell.console-page .screen-project-row:hover {
+  background: var(--sui-fill);
+}
+
+/* ---------------------------------------------------------------------------
+   12. LOGIN / PASSWORD
+   ------------------------------------------------------------------------- */
+.reference-login-card,
+.password-reset-card {
+  border-radius: 20px;
+  border: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--ink) 8%, transparent),
+    0 40px 100px -50px rgb(0 0 0 / .85);
+  backdrop-filter: var(--sui-blur);
+}
+
+.auth-page .reference-submit,
+.auth-page .primary-btn {
+  min-height: 42px;
+  border-radius: 10px;
+  font-weight: 620;
+}
+
+.auth-page input.form-input {
+  border-radius: 10px;
+  min-height: 42px;
+}
+
+/* The 显示/隐藏 password toggle was a solid white pill — the single brightest
+   pixel on the whole screen, brighter than the submit button it sits next to.
+   Make it a plain glyph affordance with a text label at the platform's
+   .plain control weight. */
+.auth-page .form-toggle,
+.login-reference-page .form-toggle {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sui-label-3);
+  font-size: var(--sui-text-footnote);
+  font-weight: 550;
+  min-height: 30px;
+  padding: 2px 8px;
+}
+
+.auth-page .form-toggle:hover,
+.login-reference-page .form-toggle:hover {
+  background: var(--sui-fill);
+  color: var(--sui-label);
+}
+
+/* ---------------------------------------------------------------------------
+   11b. DISPLAY NUMERALS — 大字也收一档
+   ---------------------------------------------------------------------------
+   用户反馈「文字展示还是有一些太大了」。字阶令牌（--sui-text-*）收一档之后，
+   仍有几处**不走令牌**的显示级大字，实测在 1600×1000 上偏大：
+     KPI 数字       clamp(24px,2vw,30px) → 24px 封顶   （4 处，最显眼）
+     台账汇总数字    clamp(24px,2vw,30px) → 24px
+     大屏 KPI       30px（screen.css 硬编码） → 26px
+     欢迎语标题     23px（admin-layout 硬编码） → 19px
+     侧栏品牌名     17px → 15px
+     欢迎语 H2      22px → 19px
+   只改字号，行高/字重/间距不动，避免版面跳动。
+   ------------------------------------------------------------------------- */
+:root .vben-shell.console-page .dashboard-stats strong,
+:root .vben-shell.console-page .admin-stats-grid strong,
+:root .vben-shell.console-page .vault-summary strong,
+:root .vben-shell.console-page .ledger-stats strong {
+  font-size: clamp(20px, 1.6vw, 24px);
+}
+
+:root .vben-shell.screen-page .screen-kpi-tile strong { font-size: 26px; }
+:root .vben-shell.console-page .screen-kpi-tile strong { font-size: 26px; }
+:root .vben-shell.console-page .screen-donut-center strong { font-size: 20px; }
+:root .vben-shell.console-page .payment-overview > strong { font-size: 22px; }
+
+:root .vben-shell.console-page .dashboard-hero h2 { font-size: 19px; }
+
+:root .vben-shell.console-page .side-logo strong { font-size: 15px; }
+
+:root .vben-shell.console-page .dashboard-hero .welcome-copy h1,
+:root .vben-shell.console-page .welcome-copy h2 { font-size: 19px; }
+
+/* ---------------------------------------------------------------------------
+   12. LEGACY HARDCODED GREYS — 收口到语义色阶
+   实测对比度严重不足（深色底上 1.8~3.2，远低于 WCAG AA 的 4.5）：
+     #93a4bf rail-note       → 1.84
+     #627590 workspace-label → 1.89
+     #7185a2 指标卡英文小标   → 1.90
+     #99b0d2 卡片 tag         → 约 3.2
+     #7587a2 placeholder      → 约 3.2
+   全部改读 --sui-label-3/4，跟随用户主题色相，不再各漂各的。
+   注意只改颜色，字号/间距/结构一律不动。
+   ------------------------------------------------------------------------- */
+:root .vben-shell.console-page .rail-note { color: var(--sui-label-3); }
+:root .vben-shell.console-page .workspace-label { color: var(--sui-label-3); }
+:root .vben-shell.console-page .dashboard-stats small,
+:root .vben-shell.console-page .admin-stats-grid small,
+:root .vben-shell.console-page .vault-summary small,
+:root .vben-shell.console-page .ledger-stats small { color: var(--sui-label-4); }
+:root .vben-shell.console-page .system-tags b,
+:root .vben-shell.console-page .tags b { color: var(--sui-label-3); }
+:root .vben-shell.console-page input::placeholder,
+:root .vben-shell.console-page textarea::placeholder { color: var(--sui-label-4); }
+/* 卡片二级描述（系统说明）实测 3.26 —— 提一档 */
+:root .vben-shell.console-page .system-card p,
+:root .vben-shell.console-page .system-card small { color: var(--sui-label-3); }
+
+/* ---------------------------------------------------------------------------
+   13. CHROME & FOOTER
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page .workspace-header,
+.vben-shell.console-page .side-rail {
+  background: var(--sui-material-thick);
+  backdrop-filter: var(--sui-blur);
+  border-color: var(--line);
+}
+
+.vben-shell.console-page .side-rail {
+  box-shadow: 1px 0 0 var(--line), 12px 0 40px -30px rgb(0 0 0 / .7);
+}
+
+.vben-shell.console-page .console-footer {
+  color: var(--sui-label-4);
+  font-size: var(--sui-text-caption);
+  letter-spacing: .01em;
+  border-color: var(--sui-separator);
+}
+
+.vben-shell.console-page .shell-icon-btn {
+  border-radius: 8px;
+  color: var(--sui-label-3) !important;
+}
+
+.vben-shell.console-page .shell-icon-btn:hover {
+  background: var(--sui-fill) !important;
+  color: var(--sui-label) !important;
+}
+
+/* Widget grip: was permanently visible at .55 opacity on every block, which read
+   as an unfinished admin artefact. Reveal on hover/focus only. */
+.vben-shell.console-page .home-widget-handle {
+  opacity: 0;
+  border-color: var(--line) !important;
+  background: var(--sui-fill) !important;
+  color: var(--sui-label-3) !important;
+  transition: opacity var(--sui-duration-fast) var(--sui-snappy), background var(--sui-duration-fast) var(--sui-snappy);
+}
+
+.vben-shell.console-page .home-widget:hover .home-widget-handle,
+.vben-shell.console-page .home-widget-handle:focus-visible {
+  opacity: .85;
+}
+
+@media (hover: none) {
+  .vben-shell.console-page .home-widget-handle { opacity: .55; }
+}
+
+/* ---------------------------------------------------------------------------
+   14. AMBIENT PARTICLES
+   The seasonal layer painted 90 particles at .5 layer opacity in saturated
+   autumn oranges (#f4bd67 / #dc8b47 / #bc8559). Over a near-black canvas that
+   reads as brown smudges and compression noise — the "dirty splotches" that
+   made the dashboard look broken. Keep the seasonal concept, drop the
+   saturation and the count, and let it sit *under* the material.
+   ------------------------------------------------------------------------- */
+.vben-shell.console-page #appAmbientLayer {
+  opacity: .2;
+  mix-blend-mode: screen;
+  z-index: 0;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .vben-shell.console-page #appAmbientLayer { display: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   15. ENVIRONMENT VALUES
+   SwiftUI exposes these as EnvironmentValues; on the web the media queries are
+   the equivalent. Each branch is a real accommodation, not a blanket override.
+   ------------------------------------------------------------------------- */
+@media (prefers-reduced-transparency: reduce) {
+  .vben-shell.console-page .board,
+  .vben-shell.console-page .dashboard-hero,
+  .vben-shell.console-page .dashboard-stats article,
+  .vben-shell.console-page .admin-stats-grid article,
+  .vben-shell.console-page .vault-summary article,
+  .vben-shell.console-page .ledger-stats article,
+  .vben-shell.console-page .system-card,
+  .vben-shell.console-page .screen-card,
+  .vben-shell.console-page .screen-kpi-tile,
+  .vben-shell.console-page .workspace-tabs,
+  .vben-shell.console-page .workspace-header,
+  .vben-shell.console-page .side-rail {
+    background: var(--surface);
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .vben-shell.console-page {
+    --sui-label-2: color-mix(in srgb, var(--ink) 84%, transparent);
+    --sui-label-3: color-mix(in srgb, var(--ink) 62%, transparent);
+    --sui-label-4: color-mix(in srgb, var(--ink) 40%, transparent);
+    --sui-separator: color-mix(in srgb, var(--ink) 34%, transparent);
+  }
+
+  .vben-shell.console-page .board,
+  .vben-shell.console-page .system-card,
+  .vben-shell.console-page .dashboard-stats article,
+  .vben-shell.console-page .screen-card,
+  .vben-shell.console-page .ledger-panel {
+    border-color: var(--line-strong);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vben-shell.console-page button:active:not(:disabled),
+  .vben-shell.console-page .system-card:active,
+  .vben-shell.console-page .system-card:hover,
+  .vben-shell.console-page .system-card:hover .system-icon {
+    transform: none;
+  }
+}
+
+/* Pointer-only consoles have no touch target to protect; below 760px they do,
+   so the 34px rows relax back to 40px and the icon chips grow to 22px. */
+@media (max-width: 760px) {
+  .vben-shell.console-page .side-nav a { min-height: 40px; }
+  .vben-shell.console-page button,
+  .vben-shell.console-page .plain-btn { min-height: 40px; }
+  .vben-shell.console-page .system-grid { grid-template-columns: 1fr; }
+  .vben-shell.console-page .workspace-tabs { padding: 6px 12px 0; overflow-x: auto; }
+}

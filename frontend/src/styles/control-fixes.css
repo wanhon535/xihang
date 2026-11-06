@@ -1,0 +1,174 @@
+/* ============================================================================
+   ledger-controls.css — 控件与文字修复层（不动外观风格）
+   ----------------------------------------------------------------------------
+   只修 4 类可复现的硬缺陷，不改任何颜色体系 / 圆角 / 阴影 / 字阶 / 动效：
+     1. 「项目」「类别」两个筛选下拉在白底皮肤上，压过深色外壳 → 与外壳不协调
+     2. 表格 min-width:1380 超过容器 → 操作列被横向裁掉半个「编」字
+     3. 说明 / 备注 无截断 → 单条备注把行撑到 300px+，相邻列全错位
+     4. 审计时间戳直接贴 ISO-8601 → 占宽且难读
+   全部选择器都用 .vben-shell.console-page.ledger-page 前缀，保证只作用于
+   成本台账页，不影响其它模块。
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   1. 下拉控件回归外壳皮肤
+   原规则 .ledger-multi-toggle{background:#fff;color:#34465c} 是浅色主题时代的
+   遗留，特异度 0-4-0 压过 admin-layout 的全局 button 规则（0-2-1），于是只有
+   这两个筛选框是白板。改用外壳的语义令牌，其它模块的按钮完全不受影响。
+   ------------------------------------------------------------------------- */
+/* 注意：Vite 打包会把独立 <link> 的 CSS 重排到页面原样式之前（实测 dist 里
+   本文件排在 ledger.css 前），同特异度的规则会被原规则覆盖。所以下面凡与
+   原规则同特异度的选择器都加 :root 前缀提升一级（0-5-0 vs 0-4-0），
+   保证层叠顺序不受打包器影响，同时完全不修改原样式表。 */
+:root .vben-shell.console-page.ledger-page .ledger-multi-toggle {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink-2);
+}
+:root .vben-shell.console-page.ledger-page .ledger-multi-toggle:hover {
+  background: var(--surface-3);
+  border-color: var(--line-strong);
+}
+:root .vben-shell.console-page.ledger-page .ledger-multi-toggle.is-active {
+  border-color: var(--primary);
+  color: var(--theme-accent, var(--primary));
+}
+:root .vben-shell.console-page.ledger-page .ledger-multi-toggle::after {
+  color: var(--muted);
+}
+/* 展开后的多选面板同属该控件的弹出层，也要跟着外壳走 */
+:root .vben-shell.console-page.ledger-page .ledger-multi-panel {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+:root .vben-shell.console-page.ledger-page .ledger-multi-option { color: var(--ink-2); }
+:root .vben-shell.console-page.ledger-page .ledger-multi-option:hover { background: var(--surface-3); }
+:root .vben-shell.console-page.ledger-page .ledger-multi-tools { border-bottom-color: var(--line); }
+
+/* ---------------------------------------------------------------------------
+   2. 表格宽度：1380px 硬编码超过 1334px 的容器
+   12 列本来就不需要 1380px。改为 min-width:0 + 合理的列分配，让表格自己收缩，
+   操作列不再被推出可视区。同时给日期列一个 nowrap 下限，避免「2026-」/「10-21」
+   折成两行。
+   ------------------------------------------------------------------------- */
+:root .ledger-page table { min-width: 0; table-layout: auto; }
+:root .ledger-page th,
+:root .ledger-page td { padding: 12px 14px; }
+/* 日期、金额、状态、操作这几列内容短且不应折行 */
+.ledger-page td:first-child,
+.ledger-page td:nth-child(5),
+.ledger-page td:nth-child(6),
+.ledger-page td:last-child { white-space: nowrap; }
+.ledger-page thead th:last-child,
+.ledger-page tbody td:last-child { padding-right: 18px; }
+/* 审计两列（创建人/时间、修改人/时间）给固定下限，人名不会被挤成竖排 */
+.ledger-page .ledger-audit { min-width: 0; white-space: nowrap; }
+
+/* ---------------------------------------------------------------------------
+   3. 说明 / 备注 截断
+   这两列是自由文本，之前没有任何约束：一条 11 行的备注把整行撑到 316px，
+   旁边所有列跟着错位。截断必须包在 td 内部的块级元素上——直接对 td 设
+   display:-webkit-box 会让单元格退出 table-cell 布局，整行会塌掉。
+   完整内容保留在 title 里，鼠标悬停可见。
+   ------------------------------------------------------------------------- */
+:root .ledger-page td.ledger-clamp {
+  max-width: 240px;
+  vertical-align: top;
+}
+/* -webkit-line-clamp 只有在 white-space 为 normal 时才会渲染「…」省略号；
+   原 td 上的 white-space:pre-wrap 会把它吃掉。另外 max-height 会和
+   line-clamp 抢裁剪权——一旦 max-height 先触发，就只剩硬裁切、省略号不再
+   渲染（实测 height 62px 却看不到 …）。所以这里只用 line-clamp 控制行数，
+   不设 max-height。 */
+:root .ledger-page .ledger-clamp-inner {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.6;
+}
+/* 备注列比说明列更宽一点，但仍然限高 */
+:root .ledger-page td.ledger-clamp:last-of-type .ledger-clamp-inner {
+  -webkit-line-clamp: 2;
+}
+
+/* ---------------------------------------------------------------------------
+   4. 审计时间戳
+   后端给的是 ISO-8601（2026-10-21T13:55:03.000Z），直接贴进表格既占宽又难读。
+   JS 侧已统一成「YYYY-MM-DD HH:mm」本地时区；这里只保证它不被折行。
+   ------------------------------------------------------------------------- */
+.ledger-page .ledger-stamp { white-space: nowrap; }
+.ledger-page .ledger-stamp .ledger-audit { color: var(--muted); font-size: 11px; }
+
+/* ---------------------------------------------------------------------------
+   5. 操作列
+   横向滚动裁掉半个「编」字的直接原因就是上面的 min-width；这里再给操作列
+   一个不收缩的宽度，并保证按钮完整可见。
+   ------------------------------------------------------------------------- */
+.ledger-page td.ledger-actions {
+  width: 1%;
+  white-space: nowrap;
+  padding-right: 18px;
+}
+:root .ledger-page td.ledger-actions button { white-space: nowrap; }
+
+/* ---------------------------------------------------------------------------
+   7. 表头「金额（元）」必须与数据右对齐
+   实测数据单元格 text-align:right（正确），但表头 th 是 left —— 列头浮在左边、
+   数字堆在右边，纵向比对时眼睛要来回跳。财务表格的金额列表头必须跟随数据右对齐。
+   ------------------------------------------------------------------------- */
+:root .ledger-page thead th:nth-child(5) {
+  text-align: right;
+}
+
+/* ---------------------------------------------------------------------------
+   8. 「重置筛选」与下拉框视觉混淆
+   实测两者高度都是 36px、底色同为一个 7% 的填充、宽度都是 315px（栅格铺满），
+   于是这个操作按钮看起来就是个输入框。只做三件事让它明确是"操作"：
+   不铺满整格（width:auto）、改用文字按钮形态（透明底 + 无边框）、主题色文字。
+   不动它的位置和字号。
+   ------------------------------------------------------------------------- */
+:root .ledger-page .ledger-filters button[type="button"]:not(.ledger-primary) {
+  width: auto;
+  justify-self: end;
+  align-self: end;
+  background: transparent;
+  border-color: transparent;
+  color: var(--theme-accent, var(--primary));
+  padding-left: 6px;
+  padding-right: 6px;
+}
+:root .ledger-page .ledger-filters button[type="button"]:not(.ledger-primary):hover {
+  background: var(--sui-fill);
+  border-color: transparent;
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------------------
+   6. 数据大屏 KPI 图标（screen.html）
+   原实现用的是 emoji（📁 ⚠️ ⏱️ 💰）。这台机器没有安装彩色 emoji 字体
+   （fc-list 查不到任何 emoji family），代理对在 inline 元素里换行后渲染成
+   「上下两个空心矩形」——不是设计问题，是字体缺失。已换成内联 SVG，
+   这里只补尺寸约束，避免 SVG 在 flex 容器里被拉成 282×26 的扁条。
+   ------------------------------------------------------------------------- */
+.vben-shell.screen-page .screen-kpi-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  opacity: .9;
+}
+.vben-shell.screen-page .screen-kpi-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

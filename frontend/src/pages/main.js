@@ -118,6 +118,21 @@ function renderGroups(groups) {
     .join('');
 }
 
+// 站内页面（相对路径或同源地址）不走 SSO：
+// SSO 是给外部站点下发 ticket 用的，而后端 `new URL(target.url)` 要求绝对地址，
+// 传相对路径会直接 500。像 /apply.html 这种自家页面直接跳转即可。
+function siteHref(site) {
+  const url = String(site?.url || '').trim();
+  if (!url) return '/app';
+  if (url.startsWith('/')) return url;
+  try {
+    if (new URL(url, window.location.origin).origin === window.location.origin) return url;
+  } catch {
+    /* 非法地址回退到 SSO */
+  }
+  return createSsoUrl(site);
+}
+
 function renderSites(sites) {
   if (sites.length === 0) {
     return '<p class="section-empty">这个分组还没有站点，等管理员放入新的入口。</p>';
@@ -125,7 +140,7 @@ function renderSites(sites) {
 
   return sites
     .map(
-      (site) => `<a class="system-card" href="${escapeHtml(createSsoUrl(site))}" target="_blank" rel="noreferrer">
+      (site) => `<a class="system-card" href="${escapeHtml(siteHref(site))}" target="_blank" rel="noreferrer">
   <span class="system-icon" style="background: ${getSiteGradient(site.name)};">${getSiteIcon(site)}</span>
   <div class="system-card-body">
     <strong>${escapeHtml(site.name)}</strong>

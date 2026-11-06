@@ -4107,3 +4107,131 @@ select.field-input {
     padding-bottom: 18px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   站点法律信息页脚：版权 + 工信部 ICP 备案号
+   依据《互联网信息服务管理办法》及工信部域名备案管理要求，备案编号须在页脚
+   显著位置展示，并链接至工业和信息化部政务服务平台（beian.miit.gov.cn）。
+
+   统一规范：
+   · 每页页脚只出现一次，格式固定为「© 年份 公司全称 · 滇ICP备XXXXXXXX号-X」
+   · 版权与备案号同一行，避免同一页面出现两处版权声明
+   · 颜色给定值而非 token（这套深色主题里 token 太暗，备案号必须可读）
+   · 全站同一套字号 / 行高 / 分隔符，保证各页面观感一致
+   --------------------------------------------------------------------------- */
+.site-beian {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 8px;
+  width: 100%;
+  margin: 28px 0 0;
+  padding: 18px 12px 14px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  line-height: 1.9;
+  /* 不用 --muted-2：这套深色主题里它是 #62666d，压在近黑底上看不清，
+     而备案号是合规要求、必须能读出来，所以给一个固定可读的浅灰。 */
+  color: #aeb9c9;
+  text-align: center;
+}
+
+.site-beian-sep {
+  /* 纯装饰分隔符，不承载信息：实测 4.08 略低于正文 4.5 的门槛，但它本来就不
+     需要被"读"（HTML 里已带 aria-hidden="true"）。提到 5.1 只是为了不再触发
+     对比度告警，同时保持视觉上仍是弱化的分隔符。 */
+  color: #8b96a6;
+  user-select: none;
+}
+
+.site-beian a {
+  color: #d7e1ee;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.site-beian a:hover,
+.site-beian a:focus-visible {
+  color: #93b8f8;
+  border-bottom-color: currentColor;
+  outline: none;
+}
+
+/* 控制台 / 后台：页脚原本是三栏（版本号 · 品牌）横排，
+   法律信息另起一整行，不挤乱原有排版。 */
+.vben-shell.console-page .console-footer .site-beian {
+  flex: 1 0 100%;
+  order: 99;
+  margin-top: 8px;
+  padding: 12px 0 0;
+  /* .console-footer 自身已有 border-top 分隔线，这里不再重复画一条 */
+  border-top: 0;
+}
+
+.console-footer .site-beian a {
+  color: #d7e1ee;
+}
+
+/* 登录 / 改密页：版本号、版权、备案号同一行，靠 flex 间距自然分开 */
+.reference-version .site-beian-sep,
+.auth-footer .site-beian-sep {
+  color: currentColor;
+  opacity: 0.5;
+}
+
+.reference-version a,
+.auth-footer a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.reference-version a:hover,
+.reference-version a:focus-visible,
+.auth-footer a:hover,
+.auth-footer a:focus-visible {
+  color: #93b8f8;
+  border-bottom-color: currentColor;
+  outline: none;
+}
+
+/* 数据大屏是没有正常文档流的全屏看板，法律信息固定在右下角展示 */
+.site-beian-fixed {
+  position: fixed;
+  right: 14px;
+  bottom: 10px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(6, 12, 20, 0.55);
+  backdrop-filter: blur(6px);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: none;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.site-beian-fixed:hover,
+.site-beian-fixed:focus-visible {
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(6, 12, 20, 0.78);
+  outline: none;
+}
+
+.site-beian-fixed a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.site-beian-fixed a:hover {
+  border-bottom-color: currentColor;
+}

@@ -1,7 +1,13 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>数据大屏 - 汐航</title><script src="/theme-bootstrap.js"></script><link rel="stylesheet" href="/src/styles/styles.css">
-    <link rel="stylesheet" href="/src/styles/admin-layout.css"><link rel="stylesheet" href="/src/styles/screen.css"></head>
-<body class="console-page vben-shell screen-page"><aside class="side-rail"><a class="side-logo" href="/"><span>汐</span><strong>汐航</strong></a><nav class="side-nav"><a href="/"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6"/></svg></b><span>工作台</span></a><a href="/vault.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.5 12.5 8-8 2 2-2 2 2 2-3 3-2-2-2 2"/></svg></b><span>星钥库</span></a><a href="/admin.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.3-8 10-4.6-1.7-8-5-8-10V6l8-3Z"/><path d="m9 12 2 2 4-4"/></svg></b><span>管理中枢</span></a><a href="/ledger.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></b><span>成本台账</span></a><a href="/screen.html" class="active" aria-current="page"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 19V9l4-3 4 3v10M14 19v-6l4-2v8"/></svg></b><span>数据大屏</span></a></nav><div class="rail-note"><span id="userName">身份验证中</span><small>跨项目数据总览</small></div></aside>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="robots" content="noindex, follow"><meta name="description" content="汐航 TideSail 工作台页面，需登录后访问，不参与搜索引擎收录。"><meta name="viewport" content="width=device-width,initial-scale=1"><title>数据大屏 - 汐航</title><script src="/theme-bootstrap.js"></script><link rel="stylesheet" href="/src/styles/styles.css">
+    <link rel="stylesheet" href="/src/styles/admin-layout.css"><link rel="stylesheet" href="/src/styles/screen.css">
+    
+    
+    <link rel="stylesheet" href="/src/styles/swiftui.css">
+    <link rel="stylesheet" href="/src/styles/control-fixes.css">
+    <link rel="stylesheet" href="/src/styles/brand-logo.css">
+</head>
+<body class="console-page vben-shell screen-page"><aside class="side-rail"><a class="side-logo" href="/app"><span class="side-logo-mark"><img src="/brand/icon-white.png" alt="汐航" width="28" height="28"></span><strong>汐航</strong></a><nav class="side-nav"><a href="/app"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6"/></svg></b><span>工作台</span></a><a href="/vault.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.5 12.5 8-8 2 2-2 2 2 2-3 3-2-2-2 2"/></svg></b><span>星钥库</span></a><a href="/apply.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h4"/></svg></b><span>申请中心</span></a><a href="/api.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5M15 7l5 5-5 5"/></svg></b><span>API</span></a><a href="/admin.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.3-8 10-4.6-1.7-8-5-8-10V6l8-3Z"/><path d="m9 12 2 2 4-4"/></svg></b><span>管理中枢</span></a><a href="/ledger.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></b><span>成本台账</span></a><a href="/screen.html" class="active" aria-current="page"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 19V9l4-3 4 3v10M14 19v-6l4-2v8"/></svg></b><span>数据大屏</span></a></nav><div class="rail-note"><span id="userName">身份验证中</span><small>跨项目数据总览</small></div></aside>
 <main class="console-main"><header class="console-topbar"><div><p class="eyebrow">XIGOU SCREEN</p><h1>数据大屏</h1><p>数据流向、成本核算与项目完成情况一屏总览。</p></div><div class="console-user"><button id="refreshBtn" type="button">刷新</button><button id="logoutBtn" type="button">退出</button></div></header>
 <p id="status" role="status" aria-live="polite">正在验证管理员身份…</p>
 <div id="screenWorkspace" hidden>
@@ -15,10 +21,10 @@
 </div>
 
 <section class="screen-kpi-strip">
-  <article class="screen-kpi-tile"><span class="screen-kpi-icon">📁</span><strong id="kpiActive" data-target="0">0</strong><span>在跑项目</span></article>
-  <article class="screen-kpi-tile screen-kpi-danger"><span class="screen-kpi-icon">⚠️</span><strong id="kpiStalled" data-target="0">0</strong><span>停滞项目</span></article>
-  <article class="screen-kpi-tile screen-kpi-warning"><span class="screen-kpi-icon">⏱️</span><strong id="kpiNearMilestone" data-target="0">0</strong><span>临近节点</span></article>
-  <article class="screen-kpi-tile"><span class="screen-kpi-icon">💰</span><strong id="kpiTotalCost" data-target="0">0</strong><span>累计成本（元）</span></article>
+  <article class="screen-kpi-tile"><span class="screen-kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></span><strong id="kpiActive" data-target="0">0</strong><span>在跑项目</span></article>
+  <article class="screen-kpi-tile screen-kpi-danger"><span class="screen-kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4 3 20h18L12 4Z"/><path d="M12 10v4M12 17h.01"/></svg></span><strong id="kpiStalled" data-target="0">0</strong><span>停滞项目</span></article>
+  <article class="screen-kpi-tile screen-kpi-warning"><span class="screen-kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5l3 2"/></svg></span><strong id="kpiNearMilestone" data-target="0">0</strong><span>临近节点</span></article>
+  <article class="screen-kpi-tile"><span class="screen-kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9 12h6M12 9v6"/></svg></span><strong id="kpiTotalCost" data-target="0">0</strong><span>累计成本（元）</span></article>
 </section>
 
 <section class="screen-grid">
@@ -56,24 +62,24 @@
   <article class="screen-card screen-card-wide screen-flow-card">
     <h2>数据流向</h2>
     <div class="screen-flow-placeholder">
-      <svg viewBox="0 0 640 140" class="screen-flow-svg" aria-hidden="true">
+      <svg viewBox="0 0 640 168" class="screen-flow-svg" aria-hidden="true">
         <g class="screen-flow-links">
-          <path d="M70,70 C160,70 160,35 250,35"/>
-          <path d="M70,70 C160,70 160,70 250,70"/>
-          <path d="M70,70 C160,70 160,105 250,105"/>
-          <path d="M250,35 C340,35 340,70 430,70"/>
-          <path d="M250,70 C340,70 340,70 430,70"/>
-          <path d="M250,105 C340,105 340,70 430,70"/>
-          <path d="M430,70 C500,70 500,70 570,70"/>
+          <path d="M70,84 C160,84 160,49 250,49"/>
+          <path d="M70,84 C160,84 160,84 250,84"/>
+          <path d="M70,84 C160,84 160,119 250,119"/>
+          <path d="M250,49 C340,49 340,84 430,84"/>
+          <path d="M250,84 C340,84 340,84 430,84"/>
+          <path d="M250,119 C340,119 340,84 430,84"/>
+          <path d="M430,84 C500,84 500,84 570,84"/>
         </g>
-        <circle class="screen-flow-pulse" r="3.5"><animateMotion dur="3.2s" repeatCount="indefinite" path="M70,70 C160,70 160,70 250,70 C340,70 340,70 430,70 C500,70 500,70 570,70"/></circle>
+        <circle class="screen-flow-pulse" r="3.5"><animateMotion dur="3.2s" repeatCount="indefinite" path="M70,84 C160,84 160,84 250,84 C340,84 340,84 430,84 C500,84 500,84 570,84"/></circle>
         <g class="screen-flow-nodes">
-          <circle cx="70" cy="70" r="7"/><text x="70" y="95">钉钉待办</text>
-          <circle cx="250" cy="35" r="6"/><text x="250" y="18">审批流</text>
-          <circle cx="250" cy="70" r="6"/><text x="250" y="140" class="screen-flow-label-down">任务日志</text>
-          <circle cx="250" cy="105" r="6"/><text x="250" y="128">通知记录</text>
-          <circle cx="430" cy="70" r="7"/><text x="430" y="95">汐航</text>
-          <circle cx="570" cy="70" r="7"/><text x="570" y="95">数据大屏</text>
+          <circle cx="70" cy="84" r="7"/><text x="70" y="108">钉钉待办</text>
+          <circle cx="250" cy="49" r="6"/><text x="250" y="32">审批流</text>
+          <circle cx="250" cy="84" r="6"/><text x="250" y="70">任务日志</text>
+          <circle cx="250" cy="119" r="6"/><text x="250" y="142">通知记录</text>
+          <circle cx="430" cy="84" r="7"/><text x="430" y="108">汐航</text>
+          <circle cx="570" cy="84" r="7"/><text x="570" y="108">数据大屏</text>
         </g>
       </svg>
       <p id="dataFlowNote" class="screen-empty">钉钉数据同步尚未接入，以上为示意布局；接入后这里会展示任务 / 审批的真实流转情况。</p>
@@ -82,4 +88,5 @@
 </section>
 
 </div>
+<div class="site-beian-fixed"><span>© 2026 云南汐构信息技术有限公司</span><span class="site-beian-sep" aria-hidden="true">·</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" title="工业和信息化部政务服务平台 · ICP/IP地址/域名信息备案管理系统">滇ICP备2026021477号-1</a></div>
 <script type="module" src="/src/pages/screen.js"></script></body></html>

@@ -2,22 +2,32 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <meta name="robots" content="noindex, follow" />
+    <meta name="description" content="汐航 TideSail 工作台。此页面需要登录后访问，不参与搜索引擎收录。" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>管理中枢 - 汐航</title>
     <script src="/theme-bootstrap.js"></script>
     <link rel="stylesheet" href="/src/styles/styles.css" />
     <link rel="stylesheet" href="/src/styles/admin-layout.css" />
 
-  </head>
+  
+    
+    
+    <link rel="stylesheet" href="/src/styles/swiftui.css">
+    <link rel="stylesheet" href="/src/styles/control-fixes.css">
+    <link rel="stylesheet" href="/src/styles/brand-logo.css">
+</head>
   <body class="console-page vben-shell admin-page admin-reference-page">
     <aside id="sidebar" class="side-rail admin-sidebar" aria-label="管理导航">
-      <a id="sidebar-logo" class="side-logo" href="/" aria-label="汐航">
-        <span>汐</span>
+      <a id="sidebar-logo" class="side-logo" href="/app" aria-label="汐航">
+        <span class="side-logo-mark"><img src="/brand/icon-white.png" alt="汐航" width="28" height="28"></span>
         <strong>汐航</strong>
       </a>
       <nav id="sidebar-menu" class="side-nav admin-tree-nav">
-        <a href="/"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6"/></svg></b><span>工作台</span></a>
+        <a href="/app"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6"/></svg></b><span>工作台</span></a>
         <a href="/vault.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.5 12.5 8-8 2 2-2 2 2 2-3 3-2-2-2 2"/></svg></b><span>星钥库</span></a>
+        <a href="/apply.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h4"/></svg></b><span>申请中心</span></a>
+        <a href="/api.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5M15 7l5 5-5 5"/></svg></b><span>API</span></a>
         <a href="/ledger.html"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></b><span>成本台账</span></a>
         <div id="nav-operations" class="nav-group">
           <button id="nav-operations-toggle" class="nav-group-title" type="button">运营管理</button>
@@ -503,8 +513,8 @@
 
       <footer class="console-footer">
         <span>Version 0.1.0</span>
-        <span>© 2026 云南汐构信息技术有限公司</span>
         <span>汐航</span>
+        <div class="site-beian"><span>© 2026 云南汐构信息技术有限公司</span><span class="site-beian-sep" aria-hidden="true">·</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" title="工业和信息化部政务服务平台 · ICP/IP地址/域名信息备案管理系统">滇ICP备2026021477号-1</a></div>
       </footer>
     </main>
 

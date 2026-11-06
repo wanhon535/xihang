@@ -178,7 +178,7 @@ passwordLoginForm.addEventListener('submit', async (event) => {
         password: passwordInput.value
       })
     });
-    window.location.href = payload.user?.mustChangePassword ? '/change-password.html' : '/';
+    window.location.href = payload.user?.mustChangePassword ? '/change-password.html' : '/app';
   } catch (loginError) {
     showError(loginError.message);
   }
@@ -187,7 +187,7 @@ passwordLoginForm.addEventListener('submit', async (event) => {
 api('/api/auth/me')
   .then((payload) => {
     if (payload.user) {
-      window.location.href = payload.user.mustChangePassword ? '/change-password.html' : '/';
+      window.location.href = payload.user.mustChangePassword ? '/change-password.html' : '/app';
     }
   })
   .catch(() => {});
@@ -476,7 +476,7 @@ async function consumeAuthHandoff(token) {
     });
     clientLog('handoff.success', payload.user?.mustChangePassword ? 'change-password' : 'home');
     window.history.replaceState(null, '', '/login.html');
-    window.location.href = payload.user?.mustChangePassword ? '/change-password.html' : '/';
+    window.location.href = payload.user?.mustChangePassword ? '/change-password.html' : '/app';
   } catch (handoffError) {
     clientLog('handoff.failed', handoffError.message || '');
     showError(handoffError.message);

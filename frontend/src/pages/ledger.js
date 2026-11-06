@@ -29,6 +29,16 @@ function node(tag, text, className) {
   if (className) element.className = className;
   return element;
 }
+
+// 审计时间戳：后端给的是 ISO-8601（2026-10-21T13:55:03.000Z），直接贴进表格
+// 既占宽又难读。统一成「YYYY-MM-DD HH:mm」并按浏览器本地时区换算。
+function formatStamp(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 function status(message, error = false) {
   $('status').textContent = message;
   $('status').classList.toggle('ledger-error', error);
@@ -181,20 +191,33 @@ async function stepVoucher(step) {
 }
 function entryRow(entry) {
   const row = node('tr');
-  for (const key of ['date', 'project', 'category', 'description']) row.append(node('td', entry[key] || '—'));
+  // Free-text columns get an explicit clamp class: without it a single long
+  // 备注 stretched the row to 11 lines and every neighbouring column lost its
+  // alignment. The full value stays reachable via title (native tooltip).
+  for (const key of ['date', 'project', 'category']) row.append(node('td', entry[key] || '—'));
+  const desc = node('td', null, 'ledger-clamp');
+  desc.append(node('div', entry.description || '—', 'ledger-clamp-inner'));
+  if (entry.description) desc.title = entry.description;
+  row.append(desc);
   row.append(node('td', money(entry.amountCents), 'ledger-money'));
   const payment = node('td');
   payment.append(node('span', paymentLabel(entry.paymentStatus), `ledger-badge ledger-${entry.paymentStatus === 'paid' ? 'paid' : 'unpaid'}`));
-  row.append(payment, node('td', entry.handler), node('td', entry.notes || '—'));
+  row.append(payment, node('td', entry.handler));
+  const notes = node('td', null, 'ledger-clamp');
+  notes.append(node('div', entry.notes || '—', 'ledger-clamp-inner'));
+  if (entry.notes) notes.title = entry.notes;
+  row.append(notes);
   const attachment = node('td');
   attachment.append(voucherCell(entry));
   row.append(attachment);
   for (const prefix of ['created', 'updated']) {
-    const cell = node('td', entry[`${prefix}ByName`] || entry[`${prefix}By`] || '—');
-    cell.append(node('small', entry[`${prefix}At`] || '—', 'ledger-audit'));
+    const cell = node('td', entry[`${prefix}ByName`] || entry[`${prefix}By`] || '—', 'ledger-stamp');
+    // Raw ISO-8601 (`2026-10-21T13:55:03.000Z`) is unreadable in a table; render
+    // it the way every other timestamp in the console reads.
+    cell.append(node('small', formatStamp(entry[`${prefix}At`]), 'ledger-audit'));
     row.append(cell);
   }
-  const action = node('td');
+  const action = node('td', null, 'ledger-actions');
   const button = node('button', '编辑');
   button.type = 'button';
   button.setAttribute('aria-label', `编辑 ${entry.date} ${entry.project}`);

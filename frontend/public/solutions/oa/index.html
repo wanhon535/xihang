@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>审批流程线上化：不换钉钉也能看清每一单</title>
+<meta name="description" content="中小企业审批流程线上化怎么做？对比钉钉原生审批、自建 OA、入口层同步三种路线，给出审批类型收敛、状态可见、留痕与权限设计的可执行清单，并说明汐航申请中心如何同步钉钉审批流。" />
+<meta name="keywords" content="审批流程线上化,OA系统,钉钉审批,审批流管理,中小企业信息化,申请中心,汐航,TideSail" />
+<link rel="canonical" href="https://xigouoa.xyz/solutions/oa/" />
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="汐航 TideSail" />
+<meta property="og:locale" content="zh_CN" />
+<meta property="og:title" content="审批流程线上化方案：不换钉钉，也能看清每一单" />
+<meta property="og:description" content="三种审批线上化路线对比 + 审批类型收敛、状态可见、留痕与权限设计的落地清单。" />
+<meta property="og:url" content="https://xigouoa.xyz/solutions/oa/" />
+<meta property="og:image" content="https://xigouoa.xyz/og-image.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="审批流程线上化：不换钉钉也能看清每一单" />
+<meta name="twitter:description" content="中小企业审批流程线上化怎么做？对比钉钉原生审批、自建 OA、入口层同步三种路线，给出审批类型收敛、状态可见、留痕与权限设计的可执行清单，并说明汐航申请中心如何同步钉钉审批流。" />
+<meta name="twitter:image" content="https://xigouoa.xyz/og-image.png" />
+<meta name="theme-color" content="#0f7d8c" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="stylesheet" href="/site.css" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "首页", "item": "https://xigouoa.xyz/" },
+        { "@type": "ListItem", "position": 2, "name": "解决方案", "item": "https://xigouoa.xyz/solutions/oa/" },
+        { "@type": "ListItem", "position": 3, "name": "审批流程线上化", "item": "https://xigouoa.xyz/solutions/oa/" }
+      ]
+    },
+    {
+      "@type": "Article",
+      "headline": "审批流程线上化怎么做",
+      "description": "中小企业审批流程线上化的三种路线对比，以及审批类型收敛、状态可见、留痕与权限设计的落地清单。",
+      "inLanguage": "zh-CN",
+      "datePublished": "2026-10-24",
+      "dateModified": "2026-10-24",
+      "mainEntityOfPage": { "@type": "WebPage", "@id": "https://xigouoa.xyz/solutions/oa/" },
+      "author": { "@type": "Organization", "name": "云南汐构信息技术有限公司", "url": "https://xigouoa.xyz/about/" },
+      "publisher": {
+        "@type": "Organization",
+        "name": "云南汐构信息技术有限公司",
+        "logo": {
+        "@type": "ImageObject",
+        "url": "https://xigouoa.xyz/brand/favicon-512.png",
+        "width": 512,
+        "height": 512
+      }
+      },
+      "about": ["审批流程线上化", "OA 系统", "钉钉审批同步"]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "已经在用钉钉审批，还需要额外的 OA 吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "如果只有一两种审批、参与人固定，钉钉原生审批够用。当审批类型变多、需要跨部门查看进度、需要和成本台账或合同执行衔接时，缺的通常不是审批引擎，而是汇总与追溯层：把散落在多个审批应用里的单据按类型、状态、人、时间归集起来。这类需求可以用入口层同步解决，不必替换钉钉。" }
+        },
+        {
+          "@type": "Question",
+          "name": "审批流程线上化一般要多久？",
+          "acceptedAnswer": { "@type": "Answer", "text": "关键取决于审批类型的收敛程度，而不是系统上线速度。建议先盘点现有审批单，把同类事项合并成不超过 15 个类型，再配置流程。收敛做得好，配置通常在一到两周内完成；不收敛就直接搬系统，往往三个月后又要重构一遍。" }
+        },
+        {
+          "@type": "Question",
+          "name": "员工抵触线上审批怎么办？",
+          "acceptedAnswer": { "@type": "Answer", "text": "抵触通常来自三件事：要装新 App、要多填字段、看不到进度。对应做法是沿用员工已经在用的入口（如钉钉）、字段只保留决策必需的、让发起人随时看到当前节点和卡住的人。把「线上审批更快」变成员工能亲身感知的事实，推广阻力会小很多。" }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="汐航 TideSail 首页">
+      <span class="brand-mark" aria-hidden="true"><img src="/brand/icon-transparent-light-bg.png" alt="" width="100%" height="100%" style="object-fit:contain"></span>
+      <span class="brand-text"><b>汐航</b><small>TideSail</small></span>
+    </a>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="/#features">产品能力</a>
+      <a class="is-active" href="/solutions/oa/">OA 与审批</a>
+      <a href="/guide/oa-selection/">选型指南</a>
+      <a href="/guide/">内容中心</a>
+      <a href="/about/">关于我们</a>
+    </nav>
+    <a class="head-cta" href="/app">进入工作台</a>
+  </div>
+</header>
+
+<main>
+
+  <div class="article-head">
+    <div class="wrap">
+      <nav class="breadcrumb" aria-label="面包屑"><a href="/">首页</a><span>/</span><a href="/solutions/oa/">解决方案</a><span>/</span>审批流程线上化</nav>
+      <h1>审批流程线上化怎么做</h1>
+      <p class="hero-lead" style="max-width:760px">不换钉钉，也能看清每一单：三条路线对比，以及审批类型收敛、状态可见、留痕与权限设计的落地清单。</p>
+      <div class="article-meta">
+        <span>云南汐构信息技术有限公司</span>
+        <span>更新于 2026-10-24</span>
+        <span>约 10 分钟阅读</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="article-body">
+    <div class="wrap">
+      <article class="prose">
+
+        <h2 id="s1">一、先确认：你的问题真的是「没有 OA」吗</h2>
+        <p class="lead">把审批搬到线上，通常被当成一个软件采购问题。但真实场景里，中小企业卡住的地方往往更具体。以下四句话，如果有两句以上成立，说明你缺的不是审批引擎：</p>
+        <ul>
+          <li>「这个单子批到哪了？」——管理者要挨个点开聊天窗口或审批列表才能确认。</li>
+          <li>「上个月那笔采购谁批的？」——审批记录存在，但和支出、合同、供应商对不上号。</li>
+          <li>「这个流程到底是哪个版本？」——同一类事项，不同部门按不同习惯提，字段五花八门。</li>
+          <li>「新人不知道怎么提。」——审批入口、提单规范只存在于老员工的经验里。</li>
+        </ul>
+        <p>这四句话指向的是同一个缺口：<strong>审批缺少汇总、追溯和标准</strong>。而这三件事，恰恰不需要你推翻现有审批工具。</p>
+
+        <h2 id="s2">二、三种路线，各解决不同的问题</h2>
+        <p>中小企业做审批线上化，现实中有三条路，成本和收益差别很大。</p>
+        <div class="table-scroll"><table>
+          <thead>
+            <tr><th>路线</th><th>做法</th><th>适合</th><th>主要代价</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>路线 A：钉钉原生审批</strong></td>
+              <td>直接在钉钉审批里建模板，员工在钉钉提交。</td>
+              <td>审批类型少（10 个以内）、参与人固定、没有跨系统数据需求。</td>
+              <td>类型一多就难找；数据留在审批应用里，难与台账、合同关联；跨部门统计靠人工导出。</td>
+            </tr>
+            <tr>
+              <td><strong>路线 B：自建 / 采购完整 OA</strong></td>
+              <td>上独立 OA 系统，表单、流程、权限、公文全部重建。</td>
+              <td>有专职 IT、流程复杂、需要公文与用印等完整行政体系的大中型组织。</td>
+              <td>实施周期长、员工要改用新系统、历史数据迁移成本高；中小企业常见结果是「上线了没人用」。</td>
+            </tr>
+            <tr>
+              <td><strong>路线 C：入口层 + 审批同步</strong></td>
+              <td>保留员工已有的提交入口（钉钉），在统一入口里把审批单同步归集，补上标准、状态视图与追溯。</td>
+              <td>已经在用钉钉 / 企微、有多个独立系统、希望低成本起步的中小企业。</td>
+              <td>需要做一次审批类型收敛；同步口径要与现有审批字段对齐。</td>
+            </tr>
+          </tbody>
+        </table></div>
+        <blockquote>
+          <p>判断口径很简单：<strong>如果员工现在提交审批的入口是钉钉，而且短期内不会换，那你要解决的是「汇总与追溯」，不是「换系统」。</strong>这正对应路线 C。</p>
+        </blockquote>
+
+        <h2 id="s3">三、线上化真正要做的四件事</h2>
+
+        <h3>1. 收敛审批类型</h3>
+        <p>先把过去三个月实际发生过的审批单列出来，按「谁发起、批什么、批完干什么」归类，合并同义类型。经验值是收敛到 <strong>8–15 个类型</strong>：少于 8 个说明颗粒度太粗，一类单子里混着完全不同的决策；多于 15 个说明在用审批代替制度，员工每提一单都要先做一次选择题。</p>
+<figure class="article-figure">
+<img src="/img/apply.webp" alt="汐航 TideSail 申请中心页面，展示可在线提交的审批申请表单" width="1200" height="783" loading="lazy" decoding="async">
+<figcaption>线上化落在具体表单上：字段固定、必填校验，提交即进入审批流。</figcaption>
+</figure>
+
+        <p>收敛后的每个类型应当能一句话说清：例如「采购申请：金额 ≥ 2000 元，部门负责人 → 财务 → 总经理」。写不出这句话的，说明还没想清楚，别急着配流程。</p>
+
+        <h3>2. 让状态对「该看的人」可见</h3>
+        <p>线上化最直接的价值不是省纸，是<strong>消灭「批到哪了」这类问句</strong>。设计时按角色分配可见范围：</p>
+        <ul>
+          <li><strong>发起人</strong>：只看自己的单，能看到当前节点、已批人、卡住的人。</li>
+          <li><strong>审批人</strong>：只看待自己处理的单，按紧急程度排序。</li>
+          <li><strong>管理者 / 财务</strong>：看全量，按类型、部门、时间、状态筛选，用于发现积压和异常。</li>
+        </ul>
+        <p>这三层视图必须由同一份数据支撑。如果靠不同人从钉钉导出 Excel 再拼，那就是把线下问题搬到了线上。</p>
+
+        <h3>3. 留痕，并且能和钱对上</h3>
+        <p>审批留痕的意义在事后：审计、复盘、追责、算项目成本。所以审批数据至少要能回答三个问题——<em>谁在什么时间批了什么、依据是什么附件、这笔支出进了哪个项目</em>。</p>
+        <p>这也是为什么审批和成本台账天然应该在一起：审批通过意味着支出被授权，台账记录意味着钱真的花出去了。两者若在两个互不相通的系统里，月底对账永远靠人。</p>
+
+        <h3>4. 权限跟组织走，而不是跟人走</h3>
+        <p>人员流动是中小企业的常态。审批权限、可见范围要挂在<strong>岗位与角色</strong>上，人走了换个人即可，而不是逐条改配置。这一点在系统选型时经常被忽略，却是上线半年后维护成本的主要来源。</p>
+
+        <h2 id="s4">四、落地清单：两周内可以做完的事</h2>
+        <ol>
+          <li><strong>第 1–3 天：盘点。</strong>导出近三个月审批单，按事项归类，标记高频、低频、重复、可取消。取消掉的类型往往比新加的更值钱。</li>
+          <li><strong>第 4–6 天：定标准。</strong>每个保留类型写清触发条件、必填字段、审批链、超时规则（超过 N 天未处理自动提醒）。</li>
+          <li><strong>第 7–10 天：配系统。</strong>在钉钉里调整模板；把审批同步到统一入口，配置角色视图；把财务需要的字段与台账字段对齐。</li>
+          <li><strong>第 11–14 天：试运行。</strong>选一个部门跑两周，观察三件事：平均审批时长、退回率、有多少单卡在同一节点。数据说话，再决定是否全员推广。</li>
+        </ol>
+
+        <h2 id="s5">五、汐航 TideSail 里的对应能力</h2>
+        <p>汐航的「申请中心」就是按上面的逻辑设计的，不替换你的审批入口：</p>
+        <ul>
+          <li><strong>审批同步：</strong>钉钉审批流同步到申请中心，按类型、状态、申请人、时间归集。</li>
+          <li><strong>角色视图：</strong>管理员与普通成员看到不同范围，发起人只看自己的单。</li>
+          <li><strong>与台账衔接：</strong>审批通过后的支出可以在<a href="/guide/cost-ledger/">项目成本台账</a>里登记并挂凭证，审批与钱在同一入口下可对应。</li>
+          <li><strong>统一入口：</strong>审批之外，员工需要的其他系统都在<a href="/#features">同一个工作台</a>里点开即用。</li>
+        </ul>
+
+        <div class="faq" style="margin-top:34px">
+          <details open>
+            <summary>已经在用钉钉审批，还需要额外的 OA 吗？</summary>
+            <div class="answer"><p>如果只有一两种审批、参与人固定，钉钉原生审批够用。当审批类型变多、需要跨部门查看进度、需要和成本台账或合同执行衔接时，缺的通常不是审批引擎，而是汇总与追溯层。这类需求可以用入口层同步解决，不必替换钉钉。</p></div>
+          </details>
+          <details>
+            <summary>审批流程线上化一般要多久？</summary>
+            <div class="answer"><p>关键取决于审批类型的收敛程度。建议先盘点现有审批单，把同类事项合并成不超过 15 个类型，再配置流程。收敛做得好，配置通常在一到两周内完成；不收敛就直接搬系统，往往三个月后又要重构一遍。</p></div>
+          </details>
+          <details>
+            <summary>员工抵触线上审批怎么办？</summary>
+            <div class="answer"><p>抵触通常来自三件事：要装新 App、要多填字段、看不到进度。对应做法是沿用员工已经在用的入口、字段只保留决策必需的、让发起人随时看到当前节点和卡住的人。</p></div>
+          </details>
+        </div>
+
+        <h2 id="s6">六、下一步</h2>
+        <p>如果你正在做 OA 选型，建议连带看两份资料：<a href="/guide/oa-selection/">中小企业 OA 系统选型指南</a>（评估维度与打分表），以及<a href="/solutions/efficiency/">统一应用入口与 SSO 的投入产出</a>（办公提效该从哪一步开始）。</p>
+        <p>想直接看产品形态，可以<a href="/app">进入汐航工作台</a>；开通企业账号请联系云南汐构信息技术有限公司的对接人。</p>
+
+      </article>
+
+      <aside class="aside-card">
+        <div class="card toc">
+          <h4>本文目录</h4>
+          <ol>
+            <li><a href="#s1">你的问题真的是「没有 OA」吗</a></li>
+            <li><a href="#s2">三种路线对比</a></li>
+            <li><a href="#s3">线上化要做的四件事</a></li>
+            <li><a href="#s4">两周落地清单</a></li>
+            <li><a href="#s5">汐航的对应能力</a></li>
+            <li><a href="#s6">下一步</a></li>
+          </ol>
+        </div>
+        <div class="card">
+          <h4>相关内容</h4>
+          <ul>
+            <li><a href="/guide/oa-selection/">中小企业 OA 选型指南</a></li>
+            <li><a href="/solutions/efficiency/">办公提效：统一入口与 SSO</a></li>
+            <li><a href="/guide/cost-ledger/">项目成本台账怎么记</a></li>
+          </ul>
+        </div>
+        <div class="card" style="background:linear-gradient(160deg,#f1fafc,#fff);border-color:#cfe7ee">
+          <h4>需要有人帮你判断？</h4>
+          <p style="font-size:13.5px;margin:0 0 10px;color:var(--body)">把现有系统清单和痛点发给我们，可以直接对照这份清单给建议。</p>
+          <a href="/about/" style="font-size:13px;font-weight:600">了解开通与联系方式 →</a>
+        </div>
+        <div class="card">
+          <h4>产品</h4>
+          <ul>
+            <li><a href="/">汐航 TideSail 首页</a></li>
+            <li><a href="/app">进入工作台</a></li>
+            <li><a href="/login.html">登录</a></li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-top">
+      <div>
+        <a class="brand" href="/">
+          <span class="brand-mark" aria-hidden="true"><img src="/brand/icon-white.png" alt="" width="100%" height="100%" style="object-fit:contain"></span>
+          <span class="brand-text"><b>汐航</b><small>TideSail</small></span>
+        </a>
+        <p class="foot-desc">企业数字化办公效率中枢：统一应用入口、钉钉审批同步、项目成本台账、企业知识库。由云南汐构信息技术有限公司出品。</p>
+      </div>
+      <div class="foot-col">
+        <h4>产品</h4>
+        <ul>
+          <li><a href="/#features">核心能力</a></li>
+          <li><a href="/solutions/efficiency/">办公提效</a></li>
+          <li><a href="/solutions/oa/">OA 与审批线上化</a></li>
+          <li><a href="/guide/cost-ledger/">项目成本台账</a></li>
+        </ul>
+      </div>
+      <div class="foot-col">
+        <h4>资料</h4>
+        <ul>
+          <li><a href="/guide/oa-selection/">OA 选型指南</a></li>
+          <li><a href="/guide/">内容中心</a></li>
+          <li><a href="/about/">关于我们</a></li>
+          <li><a href="/login.html">登录 / 进入工作台</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <div class="beian">
+        <span>© 2026 云南汐构信息技术有限公司</span>
+        <span class="sep" aria-hidden="true">·</span>
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" title="工业和信息化部政务服务平台 · ICP/IP地址/域名信息备案管理系统">滇ICP备2026021477号-1</a>
+      </div>
+      <span>汐航 TideSail · 企业数字化办公效率中枢</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

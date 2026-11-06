@@ -1,0 +1,41 @@
+/* ============================================================================
+   brand-logo.css — 侧边栏品牌标识与浏览器 favicon 对齐
+   ----------------------------------------------------------------------------
+   问题：浏览器标签页的 favicon 用的是「汐」字的**图形 logo**
+   （三点水波纹 + 粗折线骨架 + 橙色菱形），但 app 内左侧导航顶部用的是
+   一个纯文字「汐」塞在蓝色方块里 —— 两处品牌标识不匹配。
+
+   修法：把 .side-logo 里的文字方块换成真实的图形 logo 文件。
+   深色侧边栏必须用 icon-white.png（白色骨架版）：
+   icon-transparent-light-bg.png 是深色骨架版，放在深色侧栏上会糊成一片。
+
+   只改这一个品牌标识，不动导航结构、配色体系、圆角或任何其它控件。
+   ========================================================================== */
+
+/* 图形 logo 容器：去掉原来的蓝色方块底和文字，改成直接放图。
+   尺寸 28px 与原来的文字方块一致，导航栏高度不变。 */
+:root .vben-shell.console-page .side-logo .side-logo-mark {
+  display: block;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+:root .vben-shell.console-page .side-logo .side-logo-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* 折叠态（nav-collapsed）下只留图标：原规则用 display:none 隐藏 strong，
+   图标容器是 <span>，会被 .nav-collapsed .side-nav a>span 的选择器波及吗？
+   不会——那条规则限定在 .side-nav a 内部。这里显式保证折叠时图标仍显示。 */
+:root .vben-shell.console-page.nav-collapsed .side-logo .side-logo-mark {
+  display: block;
+  width: 24px;
+  height: 24px;
+}

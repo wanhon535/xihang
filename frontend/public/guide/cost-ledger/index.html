@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>项目成本台账怎么记：字段设计与月度核对</title>
+<meta name="description" content="项目成本台账的实操方法：台账字段怎么设计、凭证怎么留存、月底怎么核对、多人记账如何不重复不遗漏。附常见错误清单与 Excel / 系统两种工具的取舍。" />
+<meta name="keywords" content="项目成本台账,成本台账,全员记账,凭证管理,项目成本核算,中小企业财务,成本归集,汐航,TideSail" />
+<link rel="canonical" href="https://xigouoa.xyz/guide/cost-ledger/" />
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="汐航 TideSail" />
+<meta property="og:locale" content="zh_CN" />
+<meta property="og:title" content="项目成本台账怎么记：让每一笔支出都能对上凭证" />
+<meta property="og:description" content="字段设计、凭证留存、月度核对、多人记账防重不漏——一套可以直接照抄的台账结构。" />
+<meta property="og:url" content="https://xigouoa.xyz/guide/cost-ledger/" />
+<meta property="og:image" content="https://xigouoa.xyz/og-image.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="项目成本台账怎么记：字段设计与月度核对" />
+<meta name="twitter:description" content="项目成本台账的实操方法：台账字段怎么设计、凭证怎么留存、月底怎么核对、多人记账如何不重复不遗漏。附常见错误清单与 Excel / 系统两种工具的取舍。" />
+<meta name="twitter:image" content="https://xigouoa.xyz/og-image.png" />
+<meta name="theme-color" content="#0f7d8c" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="stylesheet" href="/site.css" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "首页", "item": "https://xigouoa.xyz/" },
+        { "@type": "ListItem", "position": 2, "name": "内容中心", "item": "https://xigouoa.xyz/guide/" },
+        { "@type": "ListItem", "position": 3, "name": "项目成本台账怎么记", "item": "https://xigouoa.xyz/guide/cost-ledger/" }
+      ]
+    },
+    {
+      "@type": "Article",
+      "headline": "项目成本台账怎么记",
+      "description": "项目成本台账的字段设计、凭证留存规范、月度核对流程与多人记账防重规则。",
+      "inLanguage": "zh-CN",
+      "datePublished": "2026-10-24",
+      "dateModified": "2026-10-24",
+      "mainEntityOfPage": { "@type": "WebPage", "@id": "https://xigouoa.xyz/guide/cost-ledger/" },
+      "author": { "@type": "Organization", "name": "云南汐构信息技术有限公司", "url": "https://xigouoa.xyz/about/" },
+      "publisher": {
+        "@type": "Organization",
+        "name": "云南汐构信息技术有限公司",
+        "logo": {
+        "@type": "ImageObject",
+        "url": "https://xigouoa.xyz/brand/favicon-512.png",
+        "width": 512,
+        "height": 512
+      }
+      },
+      "about": ["项目成本台账", "成本归集", "凭证管理"]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "项目成本台账和会计账簿是什么关系？",
+          "acceptedAnswer": { "@type": "Answer", "text": "成本台账是管理会计工具，不是法定会计账簿。它按项目维度归集支出，用于看投入结构、算项目毛利、支撑报价决策；法定账簿仍由财务按会计准则记录。两者应当能对账，但不能互相替代。" }
+        },
+        {
+          "@type": "Question",
+          "name": "多人一起记账，怎么避免重复和遗漏？",
+          "acceptedAnswer": { "@type": "Answer", "text": "三条规则：一是每笔支出必须有唯一标识（支付流水号或发票号），录入时做查重；二是按项目授权，谁负责哪个项目谁记账，避免同一笔被两个人记；三是每周固定时间核对新增记录与凭证数量，不要等到月底。" }
+        },
+        {
+          "@type": "Question",
+          "name": "没有发票的支出要不要记？",
+          "acceptedAnswer": { "@type": "Answer", "text": "要记，但必须标注凭证类型。管理台账的目的是反映真实的成本发生，缺票不等于没花钱。建议把凭证类型做成枚举：发票、收据、支付截图、合同、其他，并在备注写明缺票原因，方便后续补票或做纳税调整。" }
+        },
+        {
+          "@type": "Question",
+          "name": "外币支出怎么记？",
+          "acceptedAnswer": { "@type": "Answer", "text": "不要凭印象折算。正确做法是记录原币金额、币种与发生日期，按企业会计政策确定的汇率（通常是发生日即期汇率或当月记账汇率）折算为本位币，并把汇率来源写进备注。台账没有币种字段时，至少要在备注中写清原币与汇率，否则后续无法复核。" }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="汐航 TideSail 首页">
+      <span class="brand-mark" aria-hidden="true"><img src="/brand/icon-transparent-light-bg.png" alt="" width="100%" height="100%" style="object-fit:contain"></span>
+      <span class="brand-text"><b>汐航</b><small>TideSail</small></span>
+    </a>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="/#features">产品能力</a>
+      <a href="/solutions/oa/">OA 与审批</a>
+      <a href="/guide/oa-selection/">选型指南</a>
+      <a class="is-active" href="/guide/">内容中心</a>
+      <a href="/about/">关于我们</a>
+    </nav>
+    <a class="head-cta" href="/app">进入工作台</a>
+  </div>
+</header>
+
+<main>
+
+  <div class="article-head">
+    <div class="wrap">
+      <nav class="breadcrumb" aria-label="面包屑"><a href="/">首页</a><span>/</span><a href="/guide/">内容中心</a><span>/</span>项目成本台账怎么记</nav>
+      <h1>项目成本台账怎么记</h1>
+      <p class="hero-lead" style="max-width:780px">从字段设计、凭证留存到月度核对，给财务和项目负责人一套可以直接照抄的结构，让每一笔支出都能对上凭证。</p>
+      <div class="article-meta">
+        <span>云南汐构信息技术有限公司</span>
+        <span>发布于 2026-10-24</span>
+        <span>约 13 分钟阅读</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="article-body">
+    <div class="wrap">
+      <article class="prose">
+
+        <h2 id="s1">一、先明确：台账是给谁看的</h2>
+        <p class="lead">同一笔支出，财务、项目负责人、老板想看的东西不一样。台账设计失败的根源，往往是试图用一张表满足三种视角。</p>
+        <div class="table-scroll"><table>
+          <thead><tr><th>角色</th><th>关心什么</th><th>对台账的要求</th></tr></thead>
+          <tbody>
+            <tr><td>财务</td><td>钱花得合不合规、票据齐不齐、能不能对账</td><td>凭证完整、金额准确、有唯一标识</td></tr>
+            <tr><td>项目负责人</td><td>这个项目投入多少、花在哪、还剩多少预算</td><td>按项目归集、按分类拆分、实时可看</td></tr>
+            <tr><td>经营者</td><td>哪类项目赚钱、成本结构是否失控</td><td>跨项目汇总、按时间趋势对比</td></tr>
+          </tbody>
+        </table></div>
+        <p>三者可以共用一份明细，只要<strong>字段设计得当</strong>：明细足够细，视图各自不同。反过来，如果每个角色各维护一张表，月底必然对不上。</p>
+
+        <h2 id="s2">二、台账字段设计：最小可用集合</h2>
+        <p>字段不是越多越好。下面 11 个字段覆盖了 90% 的核对需求，多出来的字段通常没人填。</p>
+        <div class="table-scroll"><table>
+          <thead><tr><th>字段</th><th>作用</th><th>填写要求</th></tr></thead>
+          <tbody>
+            <tr><td>发生日期</td><td>归属期间</td><td>按实际支付或权责发生日期，不要填录入日期</td></tr>
+            <tr><td>项目</td><td>归集维度</td><td>必填，且必须是已存在的项目，不允许手写新项目名</td></tr>
+            <tr><td>分类</td><td>成本结构</td><td>用固定枚举（人力、外包、广告、差旅、采购、其他），不允许自由输入</td></tr>
+            <tr><td>金额</td><td>核算基础</td><td>数值型，不带货币符号；外币另记原币与汇率</td></tr>
+            <tr><td>币种</td><td>避免混算</td><td>没有该字段时，必须在备注写清原币</td></tr>
+            <tr><td>供应商 / 收款方</td><td>查重与审计</td><td>写实际收款主体，不写个人昵称</td></tr>
+            <tr><td>支付方式</td><td>对银行流水</td><td>对公转账 / 支付宝 / 微信 / 现金 / 信用卡</td></tr>
+            <tr><td>凭证</td><td>证明力</td><td>发票、收据、支付截图、合同，一条记录可挂多张</td></tr>
+            <tr><td>唯一标识</td><td>防重复</td><td>发票号或支付流水号，用于查重</td></tr>
+            <tr><td>经办人</td><td>责任追溯</td><td>实际花钱的人，不是记账的人（可以是同一人）</td></tr>
+            <tr><td>备注</td><td>解释异常</td><td>缺票原因、汇率来源、特殊约定</td></tr>
+          </tbody>
+        </table></div>
+        <blockquote>
+          <p><strong>关键原则：分类和项目必须是「选」而不是「写」。</strong>自由输入是台账数据失真的第一大来源——「广告费」「广告投放」「推广费」会变成三个分类，月底汇总时没人知道它们是不是一回事。</p>
+        </blockquote>
+
+        <h2 id="s3">三、凭证留存：三条硬规则</h2>
+        <ol>
+          <li><strong>一笔记账，对应一张（或一组）可追溯的凭证。</strong>凭证不是「以后补」，补的时候往往已经想不起当时的情况。</li>
+          <li><strong>截图要能看清四件事：</strong>金额、收款方、时间、订单号/流水号。只有金额的截图在审计时等于没有。</li>
+          <li><strong>凭证与记录放在一起，不要存在个人手机相册。</strong>存在个人设备里的凭证，在人员变动时会直接消失。</li>
+        </ol>
+        <p>实操上，手机支付截图是最常见的凭证类型。建议在支付完成的当天就录入，因为此时截图还带着完整信息，回忆成本最低。</p>
+
+        <h2 id="s4">四、月度核对：四步，不超过两小时</h2>
+        <ol>
+          <li><strong>对总额。</strong>台账本月支出合计 vs 银行 / 支付宝 / 微信流水合计。差异要先解释，再调整。</li>
+          <li><strong>对凭证。</strong>筛出无凭证记录，逐条补齐或标注原因。目标是无凭证记录占比低于 5%。</li>
+          <li><strong>对项目。</strong>检查是否有支出挂在「未分配 / 其他」项目下。这类记录超过 10%，说明录入时偷懒了，成本结构已经失真。</li>
+          <li><strong>对重复。</strong>按「唯一标识」与「金额 + 日期 + 收款方」双口径查重，删掉重复录入（保留原始记录并标注，不要直接物理删除）。</li>
+        </ol>
+        <p>这四步做完，台账就从「流水」变成了「可以决策的数据」。</p>
+
+        <h2 id="s5">五、多人记账的两条防错设计</h2>
+        <h3>1. 按项目授权，而不是全员全项目</h3>
+        <p>让每个人都记所有项目，重复率会飙升。正确做法是每个项目指定 1–2 名记账人，其他人只读。这样责任清晰，也符合「谁经手谁记录」的原则。</p>
+        <h3>2. 录入即查重</h3>
+        <p>在录入界面就按唯一标识或「金额 + 日期 + 收款方」提示疑似重复，而不是等到月底人工比对。查重放在<strong>录入时</strong>，成本最低。</p>
+
+        <h2 id="s6">六、Excel 还是系统：什么时候该换</h2>
+        <div class="table-scroll"><table>
+          <thead><tr><th>场景</th><th>Excel 够用</th><th>建议换系统</th></tr></thead>
+          <tbody>
+            <tr><td>记账人数</td><td>1–2 人</td><td>3 人以上，且分散在不同地点</td></tr>
+            <tr><td>项目数量</td><td>5 个以内</td><td>10 个以上，或项目频繁增减</td></tr>
+            <tr><td>凭证</td><td>凭证少、可集中存放</td><td>凭证以截图为主、需要与记录绑定</td></tr>
+            <tr><td>权限</td><td>不需要区分可见范围</td><td>需要按项目 / 角色控制可见</td></tr>
+            <tr><td>并发</td><td>不会同时编辑</td><td>多人同时录入（Excel 共享文件会冲突、覆盖）</td></tr>
+          </tbody>
+        </table></div>
+        <p>Excel 最大的隐性成本不是功能，而是<strong>版本冲突</strong>：两个人同时编辑一个共享文件，后保存的会覆盖先保存的内容，而且没有任何提示。当记账人数超过 2 人，这个风险就开始变得不可接受。</p>
+
+        <h2 id="s7">七、汐航的成本台账怎么做</h2>
+        <ul>
+          <li><strong>全员记账：</strong>管理员共享台账，成员按项目登记支出，不需要每人维护一份文件。</li>
+          <li><strong>项目与分类可选：</strong>从下拉选择，避免同义分类；支持按分类、项目筛选与多选。</li>
+          <li><strong>一条记录多张凭证：</strong>发票、支付截图可一次挂多张，图片自动压缩转存，不会因为体积超限存不进去。</li>
+          <li><strong>项目维度概览：</strong>直接看各项目投入总额与结构，不用再手工合并表格。</li>
+          <li><strong>与审批同一入口：</strong>审批通过后的支出在同一个工作台登记，审批与钱能对上，见<a href="/solutions/oa/">审批流程线上化</a>。</li>
+        </ul>
+
+        <div class="faq" style="margin-top:34px">
+          <details open>
+            <summary>项目成本台账和会计账簿是什么关系？</summary>
+            <div class="answer"><p>成本台账是管理会计工具，不是法定会计账簿。它按项目维度归集支出，用于看投入结构、算项目毛利、支撑报价决策；法定账簿仍由财务按会计准则记录。两者应当能对账，但不能互相替代。</p>
+<figure class="article-figure">
+<img src="/img/ledger.webp" alt="汐航 TideSail 项目成本台账列表：日期、项目、类别、金额与付款状态" width="1200" height="1083" loading="lazy" decoding="async">
+<figcaption>成本台账按项目归集，每条记录带类别、金额、付款状态与经办人。</figcaption>
+</figure>
+</div>
+          </details>
+          <details>
+            <summary>多人一起记账，怎么避免重复和遗漏？</summary>
+            <div class="answer"><p>三条规则：每笔支出必须有唯一标识并在录入时查重；按项目授权，谁负责哪个项目谁记账；每周固定核对新增记录与凭证数量，不要等到月底。</p></div>
+          </details>
+          <details>
+            <summary>没有发票的支出要不要记？</summary>
+            <div class="answer"><p>要记，但必须标注凭证类型。管理台账的目的是反映真实的成本发生，缺票不等于没花钱。建议把凭证类型做成枚举：发票、收据、支付截图、合同、其他，并在备注写明缺票原因。</p></div>
+          </details>
+          <details>
+            <summary>外币支出怎么记？</summary>
+            <div class="answer"><p>不要凭印象折算。记录原币金额、币种与发生日期，按企业会计政策确定的汇率折算为本位币，并把汇率来源写进备注。台账没有币种字段时，至少要在备注中写清原币与汇率。</p></div>
+          </details>
+        </div>
+
+        <h2 id="s8">八、继续阅读</h2>
+        <ul>
+          <li><a href="/guide/oa-selection/">中小企业 OA 系统选型指南</a>——把「汇聚层」纳入选型维度。</li>
+          <li><a href="/solutions/efficiency/">办公提效：统一入口与 SSO</a>——减少数据搬运的源头。</li>
+          <li><a href="/">汐航 TideSail 产品概览</a>。</li>
+        </ul>
+
+      </article>
+
+      <aside class="aside-card">
+        <div class="card toc">
+          <h4>本文目录</h4>
+          <ol>
+            <li><a href="#s1">台账是给谁看的</a></li>
+            <li><a href="#s2">字段设计</a></li>
+            <li><a href="#s3">凭证留存三条规则</a></li>
+            <li><a href="#s4">月度核对四步</a></li>
+            <li><a href="#s5">多人记账防错</a></li>
+            <li><a href="#s6">Excel 还是系统</a></li>
+            <li><a href="#s7">汐航的做法</a></li>
+          </ol>
+        </div>
+        <div class="card">
+          <h4>相关内容</h4>
+          <ul>
+            <li><a href="/guide/oa-selection/">OA 选型指南</a></li>
+            <li><a href="/solutions/oa/">审批流程线上化</a></li>
+            <li><a href="/solutions/efficiency/">办公提效与统一入口</a></li>
+          </ul>
+        </div>
+        <div class="card" style="background:linear-gradient(160deg,#f1fafc,#fff);border-color:#cfe7ee">
+          <h4>需要有人帮你判断？</h4>
+          <p style="font-size:13.5px;margin:0 0 10px;color:var(--body)">把现有系统清单和痛点发给我们，可以直接对照这份清单给建议。</p>
+          <a href="/about/" style="font-size:13px;font-weight:600">了解开通与联系方式 →</a>
+        </div>
+        <div class="card">
+          <h4>产品</h4>
+          <ul>
+            <li><a href="/">汐航 TideSail 首页</a></li>
+            <li><a href="/app">进入工作台</a></li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-top">
+      <div>
+        <a class="brand" href="/">
+          <span class="brand-mark" aria-hidden="true"><img src="/brand/icon-white.png" alt="" width="100%" height="100%" style="object-fit:contain"></span>
+          <span class="brand-text"><b>汐航</b><small>TideSail</small></span>
+        </a>
+        <p class="foot-desc">企业数字化办公效率中枢：统一应用入口、钉钉审批同步、项目成本台账、企业知识库。由云南汐构信息技术有限公司出品。</p>
+      </div>
+      <div class="foot-col">
+        <h4>产品</h4>
+        <ul>
+          <li><a href="/#features">核心能力</a></li>
+          <li><a href="/solutions/efficiency/">办公提效</a></li>
+          <li><a href="/solutions/oa/">OA 与审批线上化</a></li>
+          <li><a href="/guide/cost-ledger/">项目成本台账</a></li>
+        </ul>
+      </div>
+      <div class="foot-col">
+        <h4>资料</h4>
+        <ul>
+          <li><a href="/guide/oa-selection/">OA 选型指南</a></li>
+          <li><a href="/guide/">内容中心</a></li>
+          <li><a href="/about/">关于我们</a></li>
+          <li><a href="/login.html">登录 / 进入工作台</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <div class="beian">
+        <span>© 2026 云南汐构信息技术有限公司</span>
+        <span class="sep" aria-hidden="true">·</span>
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" title="工业和信息化部政务服务平台 · ICP/IP地址/域名信息备案管理系统">滇ICP备2026021477号-1</a>
+      </div>
+      <span>汐航 TideSail · 企业数字化办公效率中枢</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
